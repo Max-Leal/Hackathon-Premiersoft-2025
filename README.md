@@ -63,5 +63,5 @@ Os dados de exemplo estão na pasta data/raw.
 O banco de dados é inicializado via script SQL em scripts/init.sql.
 As configurações do Streamlit estão na pasta .streamlit/.
 
-##✍️ APS Hackathon Premiersoft 2025
+## ✍️ APS Hackathon Premiersoft 2025
 Projeto desenvolvido para fins educacionais e de inovação em saúde pública.
