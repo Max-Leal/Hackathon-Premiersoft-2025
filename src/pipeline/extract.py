@@ -96,7 +96,7 @@ def run() -> Dict[str, pd.DataFrame | Iterator]:
         'estados': ('csv', 'data/raw/estados.csv'),
         'municipios': ('csv', 'data/raw/municipios.csv'),
         'hospitais': ('csv', 'data/raw/hospitais.csv'),
-        'medicos': ('csv', 'data/raw/medicos.csv'),
+        'medicos': ('csv', 'data/raw/medicos_amostra.csv'),
         'cid10': ('excel_cid', 'data/raw/tabela CID-10.xlsx'),
         'pacientes': ('xml_stream', 'data/raw/pacientes_amostra.xml')
     }
