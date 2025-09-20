@@ -9990,11 +9990,4 @@
     <Convenio>NAO</Convenio>
     <CID-10>H33</CID-10>
   </Paciente>
-  <Paciente>
-    <Codigo>36fd2c8a-0370-4e91-9bc8-85ba90b2f335</Codigo>
-    <CPF>02543095691</CPF>
-    <Nome_Completo>Larissa Moura Ferreira Lima Martins</Nome_Completo>
-    <Genero>F</Genero>
-    <Cod_municipio>2047379</Cod_municipio>
-    <Bairro>São João</Bairro>
-    <Convenio>SIM</Convenio>
+</Pacientes>
