@@ -66,3 +66,20 @@ def fetch_data(query: str) -> pd.DataFrame:
             return pd.DataFrame()
     else:
         return pd.DataFrame()
+    
+def execute_query(query: str, params: dict = None):
+    engine = get_connection()
+    if engine:
+        try:
+            with engine.connect() as connection:
+                trans = connection.begin() # Inicia uma transação
+                connection.execute(query, params)
+                trans.commit() # Confirma a transação
+            logging.info("Consulta de modificação executada com sucesso.")
+            return True
+        except Exception as e:
+            logging.error(f"Erro ao executar a consulta de modificação: {e}")
+            st.error(f"Erro na operação com o banco de dados: {e}")
+            # trans.rollback() # A transação é desfeita automaticamente ao sair do 'with' com erro
+            return False
+    return False
