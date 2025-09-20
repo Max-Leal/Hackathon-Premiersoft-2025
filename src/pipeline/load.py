@@ -128,7 +128,8 @@ def run(dataframes: Dict[str, pd.DataFrame | Iterator]):
     pacientes_generator = dataframes.get('pacientes')
     if pacientes_generator:
         load_pacientes_with_dynamic_cids(engine, pacientes_generator)
-    
+        
+    alocar_e_carregar_medicos(engine, dataframes)
     engine.dispose()
     logging.info("Etapa de carga concluída.")
 # Função para obter a especialidade (necessária para autonomia do script de carga)
@@ -194,3 +195,81 @@ def load_pacientes_with_dynamic_cids(engine, data_generator: Iterator[pd.DataFra
     except Exception as e:
         logging.error(f"Erro na carga em chunks para 'pacientes': {e}")
         raise
+# Em: src/pipeline/load.py
+
+def alocar_e_carregar_medicos(engine, dataframes: Dict):
+    """
+    Executa a lógica de alocação de médicos a hospitais e carrega a tabela de associação.
+    Esta função é chamada DEPOIS que as tabelas medicos e hospitais já foram carregadas.
+    """
+    logging.info("Iniciando a lógica de alocação de médicos a hospitais...")
+    
+    # 1. Obter os dados necessários do banco (agora que estão limpos e carregados)
+    # >>> CORREÇÃO: Usando ST_X e ST_Y para extrair lon/lat da coluna de geometria <<<
+    query_medicos = """
+        SELECT m.codigo, m.especialidade, m.municipio_id, 
+               ST_Y(mu.localizacao) as latitude, 
+               ST_X(mu.localizacao) as longitude 
+        FROM medicos m 
+        JOIN municipios mu ON m.municipio_id = mu.codigo_ibge
+        WHERE mu.localizacao IS NOT NULL;
+    """
+    query_hospitais = """
+        SELECT h.codigo, h.especialidades, h.municipio_id, 
+               ST_Y(mu.localizacao) as latitude, 
+               ST_X(mu.localizacao) as longitude 
+        FROM hospitais h 
+        JOIN municipios mu ON h.municipio_id = mu.codigo_ibge
+        WHERE mu.localizacao IS NOT NULL;
+    """
+    medicos_df = pd.read_sql(query_medicos, engine)
+    hospitais_df = pd.read_sql(query_hospitais, engine)
+
+    if medicos_df.empty or hospitais_df.empty:
+        logging.warning("Não há médicos ou hospitais suficientes para fazer a alocação. Pulando esta etapa.")
+        return
+
+    # 2. Otimizar a busca por hospitais (pré-filtrar por município)
+    hospitais_por_municipio = {mid: g.to_dict('records') for mid, g in hospitais_df.groupby('municipio_id')}
+
+    associacoes = []
+    # 3. Iterar sobre cada médico para encontrar hospitais
+    for medico in medicos_df.to_dict('records'):
+        medico_id = medico['codigo']
+        medico_espec = medico['especialidade']
+        medico_municipio_id = medico['municipio_id']
+        
+        hospitais_alocados = 0
+        
+        # Buscar hospitais apenas no mesmo município do médico
+        hospitais_locais = hospitais_por_municipio.get(medico_municipio_id, [])
+        if not hospitais_locais:
+            continue # Pula para o próximo médico se não há hospitais na sua cidade
+
+        # 4. Filtrar por especialidade e distância
+        candidatos = []
+        for hospital in hospitais_locais:
+            # A especialidade do médico DEVE estar na lista de especialidades do hospital
+            if medico_espec in hospital['especialidades']:
+                distancia = haversine_distance(medico['latitude'], medico['longitude'], hospital['latitude'], hospital['longitude'])
+                if distancia <= 30:
+                    candidatos.append({'hospital_id': hospital['codigo'], 'distancia': distancia})
+
+        # 5. Se houver candidatos, ordenar por distância e alocar até 3
+        if candidatos:
+            candidatos.sort(key=lambda x: x['distancia']) # Ordena do mais próximo para o mais distante
+            for candidato in candidatos:
+                if hospitais_alocados < 3:
+                    associacoes.append({'medico_id': medico_id, 'hospital_id': candidato['hospital_id']})
+                    hospitais_alocados += 1
+                else:
+                    break # Para de alocar para este médico se já atingiu o limite
+
+    if not associacoes:
+        logging.warning("Nenhuma associação médico-hospital pôde ser criada com base nas regras.")
+        return
+
+    # 6. Carregar os resultados na tabela de associação
+    associacoes_df = pd.DataFrame(associacoes)
+    clear_table(engine, 'medico_hospital_associacao')
+    load_dataframe_to_table(engine, associacoes_df, 'medico_hospital_associacao')
