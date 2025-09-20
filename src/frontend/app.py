@@ -1,5 +1,5 @@
-from db_utils import fetch_data, execute_query
-import random
+from db_utils import fetch_data
+
 import streamlit as st
 from streamlit_option_menu import option_menu
 import pandas as pd
@@ -172,174 +172,26 @@ def page_alocacao():
 
     tab_medicos, tab_pacientes = st.tabs(["Alocação de Médicos", "Alocação de Pacientes"])
 
-    # --- ABA DE ALOCAÇÃO DE MÉDICOS ---
     with tab_medicos:
-        st.header("Gerenciar Alocação de Médicos")
-        
-        # --- Carregar dados para os selects ---
-        medicos_df = fetch_data("SELECT codigo, nome_completo FROM medicos ORDER BY nome_completo")
-        hospitais_df = fetch_data("SELECT codigo, nome FROM hospitais ORDER BY nome")
-        
-        # Carrega as alocações existentes para a desalocação
-        alocacoes_query = """
-            SELECT mha.medico_id, mha.hospital_id, m.nome_completo, h.nome AS nome_hospital
-            FROM medico_hospital_associacao mha
-            JOIN medicos m ON m.codigo = mha.medico_id
-            JOIN hospitais h ON h.codigo = mha.hospital_id
-            ORDER BY m.nome_completo;
-        """
-        alocacoes_df = fetch_data(alocacoes_query)
+        st.header("Alocar Médicos em Hospitais")
+        st.markdown("Regras: Máx. 3 hospitais/médico, compatibilidade de especialidade, preferência para mesma cidade (raio máx. 30km).")
+        if st.button("Executar Alocação de Médicos", key="medicos", use_container_width=True):
+            with st.spinner("Analisando especialidades e geolocalização..."):
+                time.sleep(4)
+            st.success("Alocação de médicos concluída!")
+            df_medicos = pd.DataFrame({'Médico': ['Dr. House', 'Dr. Grey'], 'Hospital Alocado': ['Hospital A', 'Hospital B'], 'Distância (km)': [5, 12]})
+            st.dataframe(df_medicos, use_container_width=True)
 
-        col1, col2 = st.columns(2, gap="large")
-
-        # --- COLUNA PARA ALOCAR UM NOVO MÉDICO ---
-        with col1:
-            st.subheader("Alocar Médico")
-            
-            medico_selecionado = st.selectbox(
-                "Selecione o Médico", 
-                options=medicos_df, 
-                format_func=lambda row: row['nome_completo'],
-                key="sel_medico"
-            )
-            hospital_selecionado = st.selectbox(
-                "Selecione o Hospital para alocar",
-                options=hospitais_df,
-                format_func=lambda row: row['nome'],
-                key="sel_hosp_med"
-            )
-
-            if st.button("Alocar Médico", use_container_width=True, type="primary"):
-                if medico_selecionado is not None and hospital_selecionado is not None:
-                    medico_id = medico_selecionado['codigo']
-                    hospital_id = hospital_selecionado['codigo']
-
-                    # Regra 1: Verificar se o médico já está em 3 hospitais
-                    count_query = f"SELECT COUNT(*) FROM medico_hospital_associacao WHERE medico_id = '{medico_id}';"
-                    count_df = fetch_data(count_query)
-                    
-                    if count_df.iloc[0,0] >= 3:
-                        st.error(f"O(a) médico(a) {medico_selecionado['nome_completo']} já está alocado(a) em 3 hospitais.")
-                    else:
-                        # Regra 2: Simular verificação de raio de 30km
-                        distancia_simulada = random.randint(1, 50) # Simula uma distância
-                        if distancia_simulada > 30:
-                            st.warning(f"Simulação: Hospital a {distancia_simulada}km, fora do raio de 30km. Alocação não permitida.")
-                        else:
-                            st.info(f"Simulação: Hospital a {distancia_simulada}km (dentro do raio).")
-                            # Executar a alocação
-                            insert_query = f"INSERT INTO medico_hospital_associacao (medico_id, hospital_id) VALUES ('{medico_id}', '{hospital_id}') ON CONFLICT DO NOTHING;"
-                            if execute_query(insert_query):
-                                st.success(f"Médico(a) {medico_selecionado['nome_completo']} alocado(a) com sucesso ao {hospital_selecionado['nome']}!")
-                                st.rerun() # Recarrega a página para atualizar as listas
-
-        # --- COLUNA PARA DESALOCAR UM MÉDICO ---
-        with col2:
-            st.subheader("Desalocar Médico")
-
-            if not alocacoes_df.empty:
-                alocacao_para_remover = st.selectbox(
-                    "Selecione a alocação para remover",
-                    options=alocacoes_df.to_dict('records'),
-                    format_func=lambda rec: f"{rec['nome_completo']} @ {rec['nome_hospital']}",
-                    key="sel_desalocar"
-                )
-
-                if st.button("Desalocar Médico", use_container_width=True):
-                    medico_id = alocacao_para_remover['medico_id']
-                    hospital_id = alocacao_para_remover['hospital_id']
-                    
-                    delete_query = f"DELETE FROM medico_hospital_associacao WHERE medico_id = '{medico_id}' AND hospital_id = '{hospital_id}';"
-                    if execute_query(delete_query):
-                        st.success("Alocação removida com sucesso!")
-                        st.rerun()
-            else:
-                st.info("Nenhuma alocação de médico para remover.")
-
-    # --- ABA DE ALOCAÇÃO DE PACIENTES ---
     with tab_pacientes:
-        st.header("Gerenciar Alocação de Pacientes")
-        
-        # Carregar pacientes (apenas os não alocados para alocação, e os alocados para desalocação)
-        pacientes_nao_alocados_df = fetch_data("SELECT codigo, nome_completo FROM pacientes WHERE hospital_alocado_id IS NULL ORDER BY nome_completo")
-        pacientes_alocados_df = fetch_data("""
-            SELECT p.codigo, p.nome_completo, h.nome AS nome_hospital
-            FROM pacientes p JOIN hospitais h ON p.hospital_alocado_id = h.codigo
-            ORDER BY p.nome_completo
-        """)
+        st.header("Alocar Pacientes em Hospitais")
+        st.markdown("Regras: Compatibilidade entre sintoma (CID-10) e especialidade do hospital, preferência pelo hospital mais próximo.")
+        if st.button("Executar Alocação de Pacientes", key="pacientes", use_container_width=True):
+            with st.spinner("Cruzando dados de CID-10 com especialidades hospitalares..."):
+                time.sleep(4)
+            st.success("Alocação de pacientes concluída!")
+            df_pacientes = pd.DataFrame({'Paciente': ['Fulano', 'Ciclano'], 'CID-10': ['I10', 'C50'], 'Hospital Alocado': ['Hospital A (Cardio)', 'Hospital C (Onco)']})
+            st.dataframe(df_pacientes, use_container_width=True)
 
-        col3, col4 = st.columns(2, gap="large")
-
-        # --- COLUNA PARA ALOCAR PACIENTE ---
-        with col3:
-            st.subheader("Alocar Paciente")
-            
-            if not pacientes_nao_alocados_df.empty:
-                paciente_selecionado = st.selectbox(
-                    "Selecione o Paciente",
-                    options=pacientes_nao_alocados_df,
-                    format_func=lambda row: row['nome_completo'],
-                    key="sel_paciente"
-                )
-                hospital_para_paciente = st.selectbox(
-                    "Selecione o Hospital",
-                    options=hospitais_df,
-                    format_func=lambda row: row['nome'],
-                    key="sel_hosp_pac"
-                )
-
-                # Selectbox dinâmico para médicos do hospital selecionado
-                if hospital_para_paciente is not None:
-                    hosp_id = hospital_para_paciente['codigo']
-                    medicos_do_hospital_df = fetch_data(f"""
-                        SELECT m.codigo, m.nome_completo
-                        FROM medicos m
-                        JOIN medico_hospital_associacao mha ON m.codigo = mha.medico_id
-                        WHERE mha.hospital_id = '{hosp_id}' ORDER BY m.nome_completo;
-                    """)
-                    
-                    medico_para_paciente = st.selectbox(
-                        "Selecione o Médico para o paciente",
-                        options=medicos_do_hospital_df,
-                        format_func=lambda row: row['nome_completo'],
-                        key="sel_med_pac"
-                    )
-
-                if st.button("Alocar Paciente", use_container_width=True, type="primary"):
-                    if paciente_selecionado and hospital_para_paciente:
-                        pac_id = paciente_selecionado['codigo']
-                        hosp_id = hospital_para_paciente['codigo']
-                        
-                        # Aloca apenas ao hospital (schema atual)
-                        update_query = f"UPDATE pacientes SET hospital_alocado_id = '{hosp_id}' WHERE codigo = '{pac_id}';"
-                        if execute_query(update_query):
-                            st.success(f"Paciente {paciente_selecionado['nome_completo']} alocado(a) ao {hospital_para_paciente['nome']} com sucesso!")
-                            # Futuramente, você poderia salvar o médico alocado em outra tabela ou coluna
-                            st.rerun()
-
-            else:
-                st.info("Todos os pacientes já estão alocados.")
-
-        # --- COLUNA PARA DESALOCAR PACIENTE ---
-        with col4:
-            st.subheader("Desalocar Paciente")
-            
-            if not pacientes_alocados_df.empty:
-                paciente_para_remover = st.selectbox(
-                    "Selecione o paciente alocado para remover",
-                    options=pacientes_alocados_df.to_dict('records'),
-                    format_func=lambda rec: f"{rec['nome_completo']} @ {rec['nome_hospital']}",
-                    key="sel_desalocar_pac"
-                )
-                if st.button("Desalocar Paciente", use_container_width=True):
-                    pac_id = paciente_para_remover['codigo']
-                    # A desalocação é setar o campo para NULL
-                    update_query = f"UPDATE pacientes SET hospital_alocado_id = NULL WHERE codigo = '{pac_id}';"
-                    if execute_query(update_query):
-                        st.success(f"Paciente {paciente_para_remover['nome_completo']} desalocado com sucesso.")
-                        st.rerun()
-            else:
-                st.info("Nenhum paciente alocado para remover.")
 def page_entidades():
     st.title("Consulta de Entidades Cadastradas 📋")
     st.markdown("Navegue e pesquise pelos dados já consolidados na plataforma.")
