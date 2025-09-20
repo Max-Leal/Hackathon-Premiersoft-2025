@@ -1,3 +1,4 @@
+import os
 from db_utils import fetch_data, execute_query
 
 import streamlit as st
@@ -5,7 +6,17 @@ from streamlit_option_menu import option_menu
 import pandas as pd
 import numpy as np
 import time
+import random # Adicione esta linha
+import pydeck as pdk # Biblioteca para mapas avançados
 from db_utils import fetch_data
+
+# --- ATIVAÇÃO DA CHAVE DE API DO MAPBOX ---
+# O Streamlit lê o arquivo secrets.toml e disponibiliza as chaves em st.secrets
+# Nós pegamos a chave e a definimos como uma variável de ambiente que o Pydeck entende.
+if "MAPBOX_API_KEY" in st.secrets:
+    os.environ["MAPBOX_API_KEY"] = st.secrets["MAPBOX_API_KEY"]
+else:
+    st.warning("Chave da API do Mapbox não encontrada. O mapa pode não ser exibido corretamente.")
 
 # --- CONFIGURAÇÕES DA PÁGINA ---
 st.set_page_config(
@@ -97,48 +108,139 @@ st.markdown("""
 # --- FUNÇÕES DAS PÁGINAS ---
 
 def page_dashboard():
-    st.title("Dashboard de Saúde | APS")
-    st.markdown("Visão consolidada dos principais indicadores de saúde.")
+    st.title("Painel de Saúde Estratégico | APS")
+    st.markdown("Análise de indicadores operacionais e de capacidade da rede de saúde.")
 
-    # --- FILTROS ---
-    cols = st.columns([1, 1, 2])
-    with cols[0]:
-        st.selectbox("Filtrar por Estado", ["Todos", "SP", "RJ", "MG"])
-    with cols[1]:
-        st.selectbox("Filtrar por Cidade", ["Todas", "São Paulo", "Rio de Janeiro"])
+    # --- SIMULAÇÃO DE DADOS DINÂMICICOS ---
+    total_pacientes = 1254320
+    medicos_ativos = 2458
+    hospitais_monitorados = 172
+    cid_data = {
+        'cid_descricao': ['I10 - Hipertensão essencial', 'E11 - Diabetes mellitus', 'J44 - DPOC', 'I25 - Doença isquêmica do coração', 'N18 - Doença renal crônica', 'G47 - Distúrbios do sono', 'M54 - Dorsalgia', 'J06 - Infecções agudas'],
+        'total_pacientes': np.random.randint(5000, 20000, size=8)
+    }
+    df_cid = pd.DataFrame(cid_data).sort_values('total_pacientes', ascending=False)
+    hospital_data = {
+        'nome': [f'Hospital {chr(65+i)}' for i in range(10)],
+        'lat': np.random.uniform(-23.50, -23.60, size=10),
+        'lon': np.random.uniform(-46.60, -46.70, size=10),
+        'leitos_totais': np.random.randint(100, 500, size=10),
+        'leitos_ocupados': np.random.randint(50, 480, size=10)
+    }
+    hospital_data['leitos_ocupados'] = np.minimum(hospital_data['leitos_ocupados'], hospital_data['leitos_totais'] - 10)
+    df_hospitais = pd.DataFrame(hospital_data)
+    df_hospitais['taxa_ocupacao'] = (df_hospitais['leitos_ocupados'] / df_hospitais['leitos_totais'])
+    alocacao_data = {
+        'num_hospitais': ['1 Hospital', '2 Hospitais', '3 Hospitais'],
+        'total_medicos': [1200, 858, 400]
+    }
+    df_alocacao_medicos = pd.DataFrame(alocacao_data)
 
-    st.write("---")
+    # --- LAYOUT COM ABAS PARA MELHOR ORGANIZAÇÃO ---
+    tab_geral, tab_geo, tab_recursos = st.tabs([
+        " Visão Geral ", 
+        " Análise Geográfica ", 
+        " Recursos e Capacidade "
+    ])
 
-    # --- KPIs (Métricas) ---
-    kpi_cols = st.columns(4)
-    with kpi_cols[0]:
-        st.metric(label="Total de Pacientes", value="1.2M", delta="+5.2%")
-    with kpi_cols[1]:
-        st.metric(label="Leitos Ocupados", value="85.2%", delta="-1.5%", delta_color="inverse")
-    with kpi_cols[2]:
-        st.metric(label="Médicos Ativos", value="2,458", delta="+12%")
-    with kpi_cols[3]:
-        st.metric(label="Hospitais Monitorados", value="172")
+    # --- ABA 1: VISÃO GERAL ---
+    with tab_geral:
+        st.header("Indicadores Chave de Performance (KPIs)")
     
-    st.write("---")
+        # --- CORREÇÃO DE LAYOUT: KPIs movidos para dentro da aba ---
+        kpi_cols = st.columns(4)
+        taxa_ocupacao_geral = df_hospitais['leitos_ocupados'].sum() / df_hospitais['leitos_totais'].sum()
+        
+        with kpi_cols[0]:
+            st.metric(label="Total de Pacientes", value=f"{total_pacientes:,}".replace(",", "."))
+        with kpi_cols[1]:
+            st.metric(label="Taxa de Ocupação Geral", value=f"{taxa_ocupacao_geral:.1%}", delta="-1.5%", delta_color="inverse")
+        with kpi_cols[2]:
+            st.metric(label="Médicos Ativos", value=f"{medicos_ativos:,}".replace(",", "."))
+        with kpi_cols[3]:
+            st.metric(label="Hospitais Monitorados", value=hospitais_monitorados)
+        
+        st.divider()
 
-    # --- Gráficos ---
-    chart_cols = st.columns(2)
-    with chart_cols[0]:
-        st.subheader("Pacientes por Especialidade (CID-10)")
-        chart_data = pd.DataFrame({
-            "Especialidade": ["Cardiologia", "Oncologia", "Neurologia", "Ortopedia", "Outros"],
-            "Pacientes": [120, 85, 60, 95, 150],
-        })
-        st.bar_chart(chart_data, x="Especialidade", y="Pacientes")
+        # --- CORREÇÃO DE LAYOUT: Gráficos movidos para dentro da aba ---
+        chart_cols = st.columns([2, 2])
+        with chart_cols[0]:
+            st.subheader("Top 8 Diagnósticos (CID-10)")
+            st.markdown("Principais condições que levam os pacientes à rede.")
+            st.bar_chart(df_cid, x='cid_descricao', y='total_pacientes', color="#7d53de")
+            
+        with chart_cols[1]:
+            st.subheader("Alocação de Médicos na Rede")
+            st.markdown("Distribuição de médicos pelo número de hospitais em que atuam.")
+            st.data_editor(
+                df_alocacao_medicos,
+                column_config={
+                    "total_medicos": st.column_config.ProgressColumn(
+                        "Total de Médicos", format="%f", min_value=0,
+                        max_value=int(df_alocacao_medicos['total_medicos'].max()),
+                    ),
+                },
+                hide_index=True, use_container_width=True
+            )
+            with st.expander("Ver dados da alocação"):
+                st.dataframe(df_alocacao_medicos, use_container_width=True)
 
-    with chart_cols[1]:
-        st.subheader("Distribuição Geográfica dos Hospitais")
-        map_data = pd.DataFrame(
-            np.random.randn(100, 2) / [50, 50] + [-23.55, -46.63],
-            columns=['lat', 'lon']
+    # --- ABA 2: ANÁLISE GEOGRÁFICA ---
+    with tab_geo:
+        st.header("Distribuição e Ocupação de Hospitais")
+        
+        min_ocupacao = st.slider(
+            "Filtrar por taxa de ocupação mínima (%)", 
+            min_value=0, max_value=100, value=20, format="%d%%"
         )
-        st.map(map_data)
+        
+        df_filtrado = df_hospitais[df_hospitais['taxa_ocupacao'] >= (min_ocupacao / 100.0)]
+
+        if not df_filtrado.empty:
+            view_state = pdk.ViewState(
+                latitude=df_filtrado['lat'].mean(),
+                longitude=df_filtrado['lon'].mean(),
+                zoom=10, pitch=50,
+            )
+            
+            layer = pdk.Layer(
+                "ScatterplotLayer", data=df_filtrado, get_position='[lon, lat]',
+                get_color='[200, 30, 0, 160]', get_radius='leitos_totais',
+                pickable=True, auto_highlight=True
+            )
+            
+            df_filtrado['taxa_ocupacao_formatado'] = df_filtrado['taxa_ocupacao'].apply(lambda x: f"{x:.1%}")
+            tooltip = {
+                "html": "<b>{nome}</b><br/>Ocupação: {taxa_ocupacao_formatado}<br/>Leitos: {leitos_ocupados}/{leitos_totais}",
+                "style": {"backgroundColor": "#7d53de", "color": "white"}
+            }
+
+            r = pdk.Deck(
+                layers=[layer], initial_view_state=view_state,
+                map_style=pdk.map_styles.MAPBOX_LIGHT, # Usa um estilo padrão do Mapbox
+                tooltip=tooltip
+            )
+            st.pydeck_chart(r)
+            st.info("Passe o mouse sobre os pontos para ver detalhes. O tamanho do círculo representa a capacidade total de leitos.")
+        else:
+            st.warning("Nenhum hospital encontrado para o filtro de ocupação selecionado.")
+
+    # --- ABA 3: RECURSOS E CAPACIDADE ---
+    with tab_recursos:
+        st.header("Análise Detalhada da Capacidade Hospitalar")
+        st.markdown("Monitore a ocupação de leitos em cada unidade para otimizar a alocação de pacientes.")
+        
+        st.dataframe(
+            df_hospitais,
+            column_config={
+                "nome": "Hospital",
+                "taxa_ocupacao": st.column_config.ProgressColumn(
+                    "Taxa de Ocupação", format="%.1f%%", min_value=0, max_value=1,
+                ),
+                "lat": None, "lon": None,
+            },
+            use_container_width=True, hide_index=True
+        )
 
 def page_upload():
     st.title("Ingestão e Processamento de Dados 📤")
