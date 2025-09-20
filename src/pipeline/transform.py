@@ -2,82 +2,147 @@
 
 import logging
 import pandas as pd
-from typing import Iterator
+from typing import Iterator, Dict
+import math
 
-# --- Funções de Limpeza Específicas ---
+# Mapeamento de Capítulos CID-10 para Especialidades Médicas
+CID_CAPITULO_ESPECIALIDADE_MAP = {
+    'A': 'Infectologia', 'B': 'Infectologia', 'C': 'Oncologia',
+    'D00-D48': 'Oncologia', 'D50-D89': 'Hematologia', 'E': 'Endocrinologia',
+    'F': 'Psiquiatria', 'G': 'Neurologia', 'H00-H59': 'Oftalmologia',
+    'H60-H95': 'Otorrinolaringologia', 'I': 'Cardiologia', 'J': 'Pneumologia',
+    'K': 'Gastroenterologia', 'L': 'Dermatologia', 'M': 'Ortopedia',
+    'N': 'Nefrologia', 'O': 'Ginecologia', 'P': 'Pediatria', 'Q': 'Genética Médica'
+}
+
+# --- Funções Auxiliares ---
 
 def clean_name(full_name: str) -> str:
-    """Remove sobrenomes duplicados consecutivos de um nome completo."""
-    if not isinstance(full_name, str):
-        return full_name
-        
+    if not isinstance(full_name, str): return full_name
     words = full_name.split()
-    cleaned_words = []
-    for i, word in enumerate(words):
-        if i == 0 or word.lower() != words[i-1].lower():
-            cleaned_words.append(word)
+    if not words: return ""
+    cleaned_words = [words[0]]
+    for i in range(1, len(words)):
+        if words[i].lower() != words[i-1].lower(): cleaned_words.append(words[i])
     return ' '.join(cleaned_words)
 
-def transform_hospitais(df: pd.DataFrame) -> pd.DataFrame:
-    """Normaliza a coluna 'especialidades' do DataFrame de hospitais."""
-    if df.empty:
-        return df
-    
-    logging.info("Transformando dados de hospitais: normalizando especialidades.")
-    # Garante que a coluna exista e trata valores nulos antes de dividir
-    if 'especialidades' in df.columns:
-        df['especialidades'] = df['especialidades'].fillna('').astype(str).str.split(';')
-    return df
+def get_especialidade_from_cid(codigo: str) -> str:
+    if not isinstance(codigo, str) or not codigo: return "Clínica Geral"
+    letra = codigo[0]
+    if letra == 'D' and len(codigo) > 2:
+        try:
+            num = int(codigo[1:3]); return 'Hematologia' if 50 <= num <= 89 else 'Oncologia'
+        except ValueError: pass
+    if letra == 'H' and len(codigo) > 2:
+        try:
+            num = int(codigo[1:3]); return 'Oftalmologia' if 0 <= num <= 59 else 'Otorrinolaringologia'
+        except ValueError: pass
+    return CID_CAPITULO_ESPECIALIDADE_MAP.get(letra, 'Clínica Geral')
 
-def transform_medicos(df: pd.DataFrame) -> pd.DataFrame:
-    """Limpa a coluna de nomes do DataFrame de médicos."""
-    if df.empty:
-        return df
-    
-    logging.info("Transformando dados de médicos: limpando nomes.")
-    if 'nome_completo' in df.columns:
-        df['nome_completo'] = df['nome_completo'].apply(clean_name)
-    return df
+def haversine_distance(lat1, lon1, lat2, lon2):
+    R = 6371
+    dLat = math.radians(lat2 - lat1)
+    dLon = math.radians(lon2 - lon1)
+    a = math.sin(dLat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
 
-def transform_pacientes_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
-    """Limpa a coluna de nomes em um chunk do DataFrame de pacientes."""
-    if chunk.empty:
-        return chunk
-    
-    if 'nome_completo' in chunk.columns:
-        chunk['nome_completo'] = chunk['nome_completo'].apply(clean_name)
-    return chunk
-
-def generate_cleaned_pacientes(pacientes_generator: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
-    """Cria um novo gerador que aplica a transformação a cada chunk de pacientes."""
-    logging.info("Iniciando transformação em streaming para dados de pacientes.")
-    for chunk in pacientes_generator:
-        yield transform_pacientes_chunk(chunk)
+def create_point_string(row):
+    """Cria a string 'POINT(lon lat)' a partir de uma linha de DataFrame."""
+    if pd.notna(row['longitude']) and pd.notna(row['latitude']):
+        return f"POINT({row['longitude']} {row['latitude']})"
+    return None
 
 # --- Função Principal de Transformação ---
 
-def run(dataframes: dict) -> dict:
-    """
-    Executa a etapa de transformação em todos os DataFrames.
-    """
+def run(dataframes: Dict[str, pd.DataFrame | Iterator]) -> Dict[str, pd.DataFrame | Iterator]:
     logging.info("Iniciando a etapa de transformação...")
-    
-    transformed_data = {}
-    
-    if 'hospitais' in dataframes:
-        transformed_data['hospitais'] = transform_hospitais(dataframes['hospitais'])
-        
-    if 'medicos' in dataframes:
-        transformed_data['medicos'] = transform_medicos(dataframes['medicos'])
-        
-    if 'pacientes' in dataframes:
-        # Mantemos o padrão de gerador para os pacientes
-        transformed_data['pacientes'] = generate_cleaned_pacientes(dataframes['pacientes'])
-        
-    # Adiciona os dataframes que não precisam de transformação complexa
     for name, df in dataframes.items():
-        if name not in transformed_data:
-            transformed_data[name] = df
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            df.columns = [col.lower().strip().replace(' ', '_') for col in df.columns]
+
+    df_municipios = dataframes.get('municipios')
+    df_hospitais = dataframes.get('hospitais')
+    
+    valid_municipio_ids = set()
+    if df_municipios is not None and not df_municipios.empty:
+        df_municipios['codigo_ibge'] = pd.to_numeric(df_municipios['codigo_ibge'], errors='coerce')
+        valid_municipio_ids = set(df_municipios.dropna(subset=['codigo_ibge'])['codigo_ibge'])
+        logging.info("Populando coluna de geolocalização para municípios...")
+        df_municipios['localizacao'] = df_municipios.apply(create_point_string, axis=1)
+
+    if df_hospitais is not None and not df_hospitais.empty and df_municipios is not None:
+        if 'cidade' in df_hospitais.columns: df_hospitais.rename(columns={'cidade': 'municipio_id'}, inplace=True)
+        df_hospitais['municipio_id'] = pd.to_numeric(df_hospitais['municipio_id'], errors='coerce')
+        df_hospitais = df_hospitais[df_hospitais['municipio_id'].isin(valid_municipio_ids)]
+        if 'especialidades' in df_hospitais.columns:
+            df_hospitais['especialidades'] = df_hospitais['especialidades'].fillna('').astype(str).str.split(';').apply(lambda s: [spec.strip() for spec in s if spec.strip()])
+        df_hospitais = pd.merge(df_hospitais, df_municipios[['codigo_ibge', 'latitude', 'longitude']], left_on='municipio_id', right_on='codigo_ibge', how='left')
+        df_hospitais.dropna(subset=['latitude', 'longitude'], inplace=True)
+        logging.info("Populando coluna de geolocalização para hospitais...")
+        df_hospitais['localizacao'] = df_hospitais.apply(create_point_string, axis=1)
+        hospital_cols_to_load = ['codigo', 'nome', 'municipio_id', 'especialidades', 'leitos_totais', 'localizacao']
+        dataframes['hospitais'] = df_hospitais[hospital_cols_to_load]
+
+    hospitals_by_municipality = {}
+    if df_hospitais is not None and not df_hospitais.empty:
+        hospitals_by_municipality = {
+            municipio_id: group.to_dict('records')
+            for municipio_id, group in df_hospitais.groupby('municipio_id')
+        }
+        logging.info(f"Pré-processados hospitais para {len(hospitals_by_municipality)} municípios.")
+
+    def allocate_hospital(patient):
+        cid_code = patient.get('cid_10'); municipio_id = patient.get('cod_municipio')
+        patient_lat = patient.get('latitude'); patient_lon = patient.get('longitude')
+        if not cid_code or pd.isna(municipio_id) or pd.isna(patient_lat): return None
+        required_specialty = get_especialidade_from_cid(cid_code)
+        hospitais_locais = hospitals_by_municipality.get(municipio_id, [])
+        if not hospitais_locais: return None
+        candidate_hospitals = [h for h in hospitais_locais if required_specialty in h.get('especialidades', [])]
+        if not candidate_hospitals:
+            candidate_hospitals = hospitais_locais
+        closest_hospital = min(candidate_hospitals, key=lambda h: haversine_distance(patient_lat, patient_lon, h['latitude'], h['longitude']))
+        return closest_hospital['codigo'] if closest_hospital else None
+
+    def transform_pacientes(generator):
+        for chunk in generator:
+            chunk.columns = [col.lower().strip() for col in chunk.columns]
+            if 'cid-10' in chunk.columns: chunk.rename(columns={'cid-10': 'cid_10'}, inplace=True)
+            chunk['nome_completo'] = chunk['nome_completo'].apply(clean_name)
+            chunk['convenio'] = chunk['convenio'].apply(lambda x: str(x).upper() == 'SIM')
+            chunk['cod_municipio'] = pd.to_numeric(chunk['cod_municipio'], errors='coerce')
             
+            # --- LÓGICA CORRETA PARA NÃO PERDER PACIENTES ---
+            # Identifica os municípios inválidos
+            invalid_municipio_mask = ~chunk['cod_municipio'].isin(valid_municipio_ids)
+            
+            # Se houver, avisa e os define como NULO, mas NÃO descarta o paciente
+            if invalid_municipio_mask.any():
+                num_invalid = invalid_municipio_mask.sum()
+                logging.warning(f"Encontrados {num_invalid} pacientes com código de município inválido. Serão mantidos com localização NULA.")
+                chunk.loc[invalid_municipio_mask, 'cod_municipio'] = None
+            
+            chunk_with_coords = pd.merge(chunk, df_municipios[['codigo_ibge', 'latitude', 'longitude']], left_on='cod_municipio', right_on='codigo_ibge', how='left')
+            chunk_with_coords['hospital_alocado_id'] = chunk_with_coords.apply(allocate_hospital, axis=1)
+            
+            yield chunk_with_coords[['codigo', 'cpf', 'nome_completo', 'genero', 'cod_municipio', 'bairro', 'convenio', 'cid_10', 'hospital_alocado_id']]
+
+    # Restante da função (atribuições finais)
+    df_cid10 = dataframes.get('cid10')
+    if df_cid10 is not None: df_cid10['especialidade'] = df_cid10['codigo'].astype(str).apply(get_especialidade_from_cid)
+    df_estados = dataframes.get('estados')
+    if df_estados is not None: dataframes['estados'] = df_estados[['codigo_uf', 'uf', 'nome']]
+    df_medicos = dataframes.get('medicos')
+    if df_medicos is not None:
+        if 'cidade' in df_medicos.columns: df_medicos.rename(columns={'cidade': 'municipio_id'}, inplace=True)
+        df_medicos['municipio_id'] = pd.to_numeric(df_medicos['municipio_id'], errors='coerce')
+        df_medicos = df_medicos[df_medicos['municipio_id'].isin(valid_municipio_ids)]
+        df_medicos['nome_completo'] = df_medicos['nome_completo'].apply(clean_name)
+        dataframes['medicos'] = df_medicos[['codigo', 'nome_completo', 'especialidade', 'municipio_id']]
+    if df_municipios is not None:
+        dataframes['municipios'] = df_municipios[['codigo_ibge', 'nome', 'codigo_uf', 'localizacao']]
+
+    dataframes['pacientes'] = transform_pacientes(dataframes.get('pacientes', iter([])))
     logging.info("Etapa de transformação concluída.")
-    return transformed_data
+    return dataframes
