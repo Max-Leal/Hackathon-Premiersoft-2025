@@ -65,4 +65,4 @@ CREATE TABLE IF NOT EXISTS medico_hospital_associacao (
     medico_id UUID NOT NULL REFERENCES medicos(codigo),
     hospital_id UUID NOT NULL REFERENCES hospitais(codigo),
     PRIMARY KEY (medico_id, hospital_id)
-);
+);  
