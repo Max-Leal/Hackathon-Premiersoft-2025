@@ -1,8 +1,11 @@
+from db_utils import fetch_data
+
 import streamlit as st
 from streamlit_option_menu import option_menu
 import pandas as pd
 import numpy as np
 import time
+from db_utils import fetch_data
 
 # --- CONFIGURAÇÕES DA PÁGINA ---
 st.set_page_config(
@@ -193,27 +196,59 @@ def page_entidades():
     st.title("Consulta de Entidades Cadastradas 📋")
     st.markdown("Navegue e pesquise pelos dados já consolidados na plataforma.")
 
-    df_hosp = pd.DataFrame({'Nome': ['Hospital A', 'Hospital B'], 'CNPJ': ['11.111.111/0001-11', '22.222.222/0001-22'], 'Cidade': ['São Paulo', 'Rio de Janeiro']})
-    df_med = pd.DataFrame({'Nome': ['Dr. House', 'Dr. Grey'], 'CRM': ['12345-SP', '67890-RJ'], 'Especialidade': ['Nefrologia', 'Cirurgia Geral']})
-
+    # Cria as abas de navegação
     tab_hosp, tab_medicos, tab_pacientes = st.tabs(["Hospitais", "Médicos", "Pacientes"])
 
+    # --- ABA DE HOSPITAIS (CONECTADA AO BANCO) ---
     with tab_hosp:
-        st.text_input("Buscar Hospital por Nome ou CNPJ", key="search_hosp")
-        st.dataframe(df_hosp, use_container_width=True)
+        st.subheader("Hospitais Cadastrados")
+        
+        # Filtro de busca
+        search_term = st.text_input("Buscar Hospital por Nome", key="search_hosp")
 
+        # Mostra um spinner enquanto os dados são carregados
+        with st.spinner("Carregando dados dos hospitais..."):
+            
+            # --- CONSULTA SQL ATUALIZADA COM TODAS AS COLUNAS CORRETAS ---
+            query = "SELECT codigo, nome, cidade, bairro, especialidades, leitos_totais FROM hospitais"
+            
+            if search_term:
+                # Adiciona um filtro WHERE se algo for digitado na busca
+                query += f" WHERE nome ILIKE '%{search_term.replace('%', '%%')}%'"
+            
+            query += " ORDER BY nome;"
+
+            # Usa a função para buscar os dados do banco
+            df_hosp = fetch_data(query)
+            
+            # Exibe o DataFrame se não estiver vazio
+            if not df_hosp.empty:
+                st.dataframe(df_hosp, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum hospital encontrado no banco de dados com o filtro atual.")
+
+    # --- ABA DE MÉDICOS (DADOS ESTÁTICOS, COMO ANTES) ---
     with tab_medicos:
+        st.subheader("Médicos Cadastrados")
         st.text_input("Buscar Médico por Nome ou CRM", key="search_med")
+        
+        df_med = pd.DataFrame({
+            'Nome': ['Dr. House', 'Dr. Grey'], 
+            'CRM': ['12345-SP', '67890-RJ'], 
+            'Especialidade': ['Nefrologia', 'Cirurgia Geral']
+        })
         st.dataframe(df_med, use_container_width=True)
 
+    # --- ABA DE PACIENTES (MENSAGEM DE PRIVACIDADE, COMO ANTES) ---
     with tab_pacientes:
         st.info("A consulta de dados de pacientes está restrita por políticas de privacidade (LGPD).")
 
-# --- SIDEBAR (SEU CÓDIGO ORIGINAL) ---
+
+# --- SIDEBAR (SEU CÓDIO ORIGINAL) ---
 with st.sidebar:
     st.markdown(
         """
-        <div style="display: flex; align-items: center; margin-bottom: 2rem;">
+        <div style="display: flex; align-items-center; margin-bottom: 2rem;">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 2L2 7V17L12 22L22 17V7L12 2Z" stroke="#1E202A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
