@@ -1,0 +1,4 @@
+pacientes.xml
+medicos.csv
+__pycache__/
+secrets.toml

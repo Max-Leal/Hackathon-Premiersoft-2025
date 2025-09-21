@@ -1,0 +1,19 @@
+# Usa uma imagem oficial do Python
+FROM python:3.11-slim
+
+# Define o diretório de trabalho
+WORKDIR /app
+
+# Copia e instala as dependências
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copia apenas o código-fonte principal
+COPY src /app/src
+COPY src/frontend/.streamlit /app/.streamlit/secrets.toml
+
+# Expõe a porta que o Streamlit usa
+EXPOSE 8501
+
+# Comando para iniciar o dashboard
+CMD ["python", "-m", "streamlit", "run", "src/frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0"]

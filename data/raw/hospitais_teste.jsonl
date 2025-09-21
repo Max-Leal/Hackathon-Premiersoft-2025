@@ -1,0 +1,2 @@
+{"hospital_code": "json-hosp-01", "name": "Hospital JSON Norte", "city_ibge": "4314902", "district": "Norte", "specialties": "Psiquiatria", "total_beds": "95"}
+{"hospital_code": "json-hosp-02", "name": "Centro Médico JSON Sudoeste", "city_ibge": "4305108", "district": "Sudoeste", "specialties": "Dermatologia;Endocrinologia", "total_beds": "110"}
