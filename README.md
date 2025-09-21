@@ -60,6 +60,7 @@ Consulta: Busca e navegação por entidades cadastradas.
 ## 🏛️ Arquitetura da Solução
 O sistema foi desenhado com uma clara separação de responsabilidades entre as camadas, facilitando a manutenção e a escalabilidade. O fluxo de dados segue as etapas clássicas de um pipeline de ETL.
 Estrutura de Componentes
+
 A organização do código-fonte na pasta src/ reflete essa separação:
 code
 Code
@@ -71,11 +72,16 @@ src/
 ├── pipeline/           # Orquestração do ETL (Extract, Transform, Load)
 ├── frontend/           # Interface do dashboard (Streamlit)
 └── main.py             # Ponto de entrada que orquestra o pipeline
+
 Fluxo de Dados
 Ingestão (/src/ingestion): Arquivos de múltiplos formatos (.csv, .xlsx, .hl7, etc.) são lidos e convertidos para um schema padronizado em memória (DataFrame Pandas). Um SCHEMA_MAP universal é usado para traduzir os nomes das colunas de diferentes fontes.
+
 Transformação (/src/pipeline/transform.py): Os DataFrames padronizados passam por um processo de limpeza, validação de tipos (ex: leitos_totais para inteiro), remoção de duplicatas (ex: cpf de pacientes) e enriquecimento (ex: adição de coordenadas geográficas a médicos e hospitais).
+
 Lógica de Negócio (/src/core): Funções "puras" recebem os DataFrames limpos e aplicam as regras complexas de alocação de médicos e pacientes, retornando os resultados como novos DataFrames. Esta camada não tem conhecimento do banco de dados.
+
 Carga (/src/pipeline/load.py): A camada final recebe todos os DataFrames processados e os persiste no banco de dados PostgreSQL, respeitando a ordem de dependência das tabelas para garantir a integridade referencial.
+
 Visualização (/src/frontend): O dashboard Streamlit lê os dados já consolidados e limpos diretamente do banco de dados para apresentar os KPIs e gráficos.
 
 ## 🛠️ Requisitos
