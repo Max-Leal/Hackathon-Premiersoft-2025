@@ -1,7 +1,7 @@
 codigo,nome,cidade,bairro,especialidades,leitos_totais
 1b2c137e-75e1-4644-b1ca-c04e1055443a,Hospital Municipal Santo Antônio,4309654,Jardim,Neurologia;Ortopedia,335
 c794ca06-1e7a-4012-99e1-1642d336232e,Hospital Santa Santo Antônio,1505304,Centro,Infectologia;Clínica Geral,794
-76886037-2645-41b2-96fb-ca7b6bb13465,Hospital Instituto Vida,1501303,Parque,Ginecologia,140
+76886037-2645-41b2-96fb-ca7b6bb13465,Hospital Instituto Vida,   ,Parque,Ginecologia,140
 06f01236-efdb-4ac0-b9a1-ab544b5ff11f,Hospital Regional das Clínicas,2918605,Parque,Cirurgia Geral,489
 58eaab6a-8210-4213-b6dc-45e23f0d9aaa,Hospital Central,2801504,Centro,Cirurgia Geral,421
 73fb448e-1379-4639-8fde-f396a27f3cd3,Hospital Santa de Saúde,5001243,Lago,Endocrinologia;Pediatria,193
