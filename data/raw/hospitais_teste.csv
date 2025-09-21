@@ -1,0 +1,3 @@
+codigo,nome,cidade,bairro,especialidades,leitos_totais
+csv-hosp-01,Hospital CSV Central,4314902,Centro,Cardiologia;Nefrologia,150
+csv-hosp-02,Clinica CSV Sul,4305108,Vila Nova,Ortopedia,80

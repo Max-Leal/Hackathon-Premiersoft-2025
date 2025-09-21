@@ -348,7 +348,7 @@ def page_dashboard():
 # --- FINAL ERIC ---
 
 def page_upload():
-    st.title("Ingestão e Processamento de Dados 📤")
+    st.title("Ingestão e Processamento de Dados")
     st.markdown("Importe os arquivos de dados brutos para a plataforma.")
 
     cols = st.columns(2)
@@ -374,7 +374,7 @@ def page_upload():
             st.info("Arquivos inválidos foram movidos para a 'Dead Letter Queue' (DLQ) para análise manual.")
 
 def page_alocacao():
-    st.title("Alocação Inteligente de Recursos 🧠")
+    st.title("Alocação Inteligente de Recursos")
     st.markdown("Execute os algoritmos de alocação de médicos e pacientes nos hospitais.")
 
     tab_medicos, tab_pacientes = st.tabs(["Alocação de Médicos", "Alocação de Pacientes"])
@@ -549,7 +549,7 @@ def page_alocacao():
                 st.info("Nenhum paciente alocado para remover.")
 
 def page_entidades():
-    st.title("Consulta de Entidades Cadastradas 📋")
+    st.title("Consulta de Entidades Cadastradas")
     st.markdown("Navegue e pesquise pelos dados já consolidados na plataforma.")
 
     # Cria as abas de navegação
