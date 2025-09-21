@@ -10,6 +10,15 @@ import random # Adicione esta linha
 import pydeck as pdk # Biblioteca para mapas avançados
 import plotly.express as px
 from db_utils import fetch_data
+import base64
+
+def load_svg(svg_file):
+    """Lê um arquivo SVG e o retorna como uma string de imagem em Base64."""
+    with open(svg_file, "r") as f:
+        svg_string = f.read()
+    b64_svg = base64.b64encode(svg_string.encode("utf-8")).decode("utf-8")
+    # Retorna a string formatada para ser usada em uma tag <img>
+    return f"data:image/svg+xml;base64,{b64_svg}"
 
 # --- ATIVAÇÃO DA CHAVE DE API DO MAPBOX ---
 if "MAPBOX_API_KEY" in st.secrets:
@@ -570,13 +579,18 @@ def page_entidades():
 
 # --- SIDEBAR (SEU CÓDIO ORIGINAL) ---
 with st.sidebar:
+    # Define o caminho para o seu arquivo de logo
+    LOGO_FILE = "./assets/premiersoft_icon.svg"
+    
+    # Chama a função para carregar e codificar o SVG
+    logo_b64_string = load_svg(LOGO_FILE)
+
+    # Usa o resultado em uma tag <img>
     st.markdown(
-        """
-        <div style="display: flex; align-items-center; margin-bottom: 2rem;">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L2 7V17L12 22L22 17V7L12 2Z" stroke="#1E202A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <h1 style="font-weight:bold; font-size: 24px; margin: 0 0 0 10px; color: #1E202A;">APS
+        f"""
+        <div style="display: flex; align-items: center; margin-bottom: 2rem;">
+            <img src="{logo_b64_string}" width="64" height="64"/>
+            <h1 style="font-weight:bold; font-size: 24px; margin: 0 0 0 10px; color: #1E2A3B;">APS
                 <span style="font-size: 14px; color: #8A91A8; font-weight: 500;">v.01</span>
             </h1>
         </div>
