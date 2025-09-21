@@ -444,55 +444,118 @@ def page_alocacao():
                 st.info("Nenhum paciente alocado para remover.")
 
 def page_entidades():
+    """
+    Página principal para exibir todas as entidades do banco de dados.
+    Utiliza uma função auxiliar para renderizar cada tabela, evitando repetição de código.
+    """
+
+    # --- Função Auxiliar Genérica ---
+    def display_table_data(title, table_name, select_clause, search_columns, search_label, order_by_column, key):
+        """
+        Renderiza uma subseção completa para exibir dados de uma tabela.
+        
+        Args:
+            title (str): O título da subseção (ex: "Hospitais Cadastrados").
+            table_name (str): O nome da tabela no banco de dados.
+            select_clause (str): A parte "SELECT ..." da consulta SQL.
+            search_columns (list): Lista de colunas para usar no filtro de busca (ex: ["nome", "cpf"]).
+            search_label (str): O rótulo para a caixa de busca.
+            order_by_column (str): A coluna para ordenar os resultados.
+            key (str): Uma chave única para o widget st.text_input.
+        """
+        st.subheader(title)
+        search_term = st.text_input(search_label, key=key)
+
+        with st.spinner(f"Carregando dados de {table_name}..."):
+            # Constrói a consulta base
+            query = f"SELECT {select_clause} FROM {table_name}"
+
+            # Adiciona o filtro de busca se um termo for inserido
+            if search_term:
+                # Cria uma condição ILIKE para cada coluna de busca
+                conditions = [f"{col} ILIKE '%{search_term.replace('%', '%%')}%'" for col in search_columns]
+                # Junta as condições com OR
+                query += f" WHERE {' OR '.join(conditions)}"
+            
+            # Adiciona a ordenação
+            query += f" ORDER BY {order_by_column};"
+
+            # Busca os dados
+            df = fetch_data(query)
+
+            # Exibe o resultado
+            if not df.empty:
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            else:
+                st.info(f"Nenhum registro encontrado em '{table_name}' com o filtro atual.")
+
+    # --- Layout Principal da Página ---
     st.title("Consulta de Entidades Cadastradas 📋")
     st.markdown("Navegue e pesquise pelos dados já consolidados na plataforma.")
 
-    # Cria as abas de navegação
-    tab_hosp, tab_medicos, tab_pacientes = st.tabs(["Hospitais", "Médicos", "Pacientes"])
+    # Define as abas
+    tabs = st.tabs(["Hospitais", "Médicos", "Pacientes", "Estados", "Municípios"])
 
-    # --- ABA DE HOSPITAIS (CONECTADA AO BANCO) ---
-    with tab_hosp:
-        st.subheader("Hospitais Cadastrados")
-        
-        # Filtro de busca
-        search_term = st.text_input("Buscar Hospital por Nome", key="search_hosp")
+    # --- Aba de Hospitais ---
+    with tabs[0]:
+        display_table_data(
+            title="Hospitais Cadastrados",
+            table_name="hospitais",
+            select_clause="codigo, nome, municipio_id, especialidades, leitos_totais, ST_AsText(localizacao) AS localizacao",
+            search_columns=["nome"],
+            search_label="Buscar Hospital por Nome",
+            order_by_column="nome",
+            key="search_hosp"
+        )
 
-        # Mostra um spinner enquanto os dados são carregados
-        with st.spinner("Carregando dados dos hospitais..."):
-            
-            # --- CONSULTA SQL ATUALIZADA COM TODAS AS COLUNAS CORRETAS ---
-            query = "SELECT codigo, nome, cidade, bairro, especialidades, leitos_totais FROM hospitais"
-            
-            if search_term:
-                # Adiciona um filtro WHERE se algo for digitado na busca
-                query += f" WHERE nome ILIKE '%{search_term.replace('%', '%%')}%'"
-            
-            query += " ORDER BY nome;"
+    # --- Aba de Médicos ---
+    with tabs[1]:
+        display_table_data(
+            title="Médicos Cadastrados",
+            table_name="medicos",
+            select_clause="codigo, nome_completo, especialidade, municipio_id",
+            search_columns=["nome_completo", "especialidade"],
+            search_label="Buscar Médico por Nome ou Especialidade",
+            order_by_column="nome_completo",
+            key="search_med"
+        )
 
-            # Usa a função para buscar os dados do banco
-            df_hosp = fetch_data(query)
-            
-            # Exibe o DataFrame se não estiver vazio
-            if not df_hosp.empty:
-                st.dataframe(df_hosp, use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum hospital encontrado no banco de dados com o filtro atual.")
+    # --- Aba de Pacientes ---
+    with tabs[2]:
+        st.warning("⚠️ A visualização de dados de pacientes deve seguir as políticas de privacidade (LGPD).")
+        display_table_data(
+            title="Pacientes Cadastrados",
+            table_name="pacientes",
+            select_clause="codigo, cpf, nome_completo, genero, cod_municipio, bairro, convenio, cid_10, hospital_alocado_id",
+            search_columns=["nome_completo", "cpf"],
+            search_label="Buscar Paciente por Nome ou CPF",
+            order_by_column="nome_completo",
+            key="search_pac"
+        )
 
-    # --- ABA DE MÉDICOS (DADOS ESTÁTICOS, COMO ANTES) ---
-    with tab_medicos:
-        st.subheader("Médicos Cadastrados")
-        st.text_input("Buscar Médico por Nome ou CRM", key="search_med")
-        
-        df_med = pd.DataFrame({
-            'Nome': ['Dr. House', 'Dr. Grey'], 
-            'CRM': ['12345-SP', '67890-RJ'], 
-            'Especialidade': ['Nefrologia', 'Cirurgia Geral']
-        })
-        st.dataframe(df_med, use_container_width=True)
+    # --- Aba de Estados ---
+    with tabs[3]:
+        display_table_data(
+            title="Estados (UF)",
+            table_name="estados",
+            select_clause="codigo_uf, uf, nome",
+            search_columns=["nome", "uf"],
+            search_label="Buscar Estado por Nome ou Sigla",
+            order_by_column="nome",
+            key="search_est"
+        )
 
-    # --- ABA DE PACIENTES (MENSAGEM DE PRIVACIDADE, COMO ANTES) ---
-    with tab_pacientes:
-        st.info("A consulta de dados de pacientes está restrita por políticas de privacidade (LGPD).")
+    # --- Aba de Municípios ---
+    with tabs[4]:
+        display_table_data(
+            title="Municípios",
+            table_name="municipios",
+            select_clause="codigo_ibge, nome, codigo_uf, ST_AsText(localizacao) AS localizacao",
+            search_columns=["nome"],
+            search_label="Buscar Município por Nome",
+            order_by_column="nome",
+            key="search_mun"
+        )
 
 
 # --- SIDEBAR (SEU CÓDIO ORIGINAL) ---
