@@ -7,7 +7,8 @@ from typing import Iterator, Dict
 import json
 import hl7  # Biblioteca para HL7 v2
 
-from fhir.resources.patient import Patient
+# Remover import do fhir.resources que pode estar causando problemas
+# from fhir.resources.patient import Patient
 
 # --- Definição das Colunas Canônicas ---
 CANONICAL_COLUMNS = {
@@ -103,25 +104,54 @@ def _ensure_canonical_schema(df: pd.DataFrame, entity_type: str) -> pd.DataFrame
 # --- Adaptadores (Funções especialistas em ler cada formato) ---
 
 def from_csv(filepath: str, schema_map: dict, entity_type: str) -> pd.DataFrame:
-    df = pd.read_csv(filepath, on_bad_lines='warn', dtype=str)
-    df.rename(columns=schema_map, inplace=True)
-    available_cols = [col for col in schema_map.values() if col in df.columns]
-    df_filtered = df[available_cols] if available_cols else df
-    return _ensure_canonical_schema(df_filtered, entity_type)
+    try:
+        df = pd.read_csv(filepath, on_bad_lines='warn', dtype=str)
+        df.rename(columns=schema_map, inplace=True)
+        available_cols = [col for col in schema_map.values() if col in df.columns]
+        df_filtered = df[available_cols] if available_cols else df
+        return _ensure_canonical_schema(df_filtered, entity_type)
+    except Exception as e:
+        logging.error(f"Erro ao ler CSV {filepath}: {e}")
+        return pd.DataFrame()
 
 def from_excel(filepath: str, schema_map: dict, entity_type: str) -> pd.DataFrame:
-    df = pd.read_excel(filepath, dtype=str, engine='openpyxl')
-    df.rename(columns=schema_map, inplace=True)
-    available_cols = [col for col in schema_map.values() if col in df.columns]
-    df_filtered = df[available_cols] if available_cols else df
-    return _ensure_canonical_schema(df_filtered, entity_type)
+    try:
+        df = pd.read_excel(filepath, dtype=str, engine='openpyxl')
+        df.rename(columns=schema_map, inplace=True)
+        available_cols = [col for col in schema_map.values() if col in df.columns]
+        df_filtered = df[available_cols] if available_cols else df
+        return _ensure_canonical_schema(df_filtered, entity_type)
+    except Exception as e:
+        logging.error(f"Erro ao ler Excel {filepath}: {e}")
+        return pd.DataFrame()
 
 def from_json(filepath: str, schema_map: dict, entity_type: str) -> pd.DataFrame:
-    df = pd.read_json(filepath, lines=True, dtype=str)
-    df.rename(columns=schema_map, inplace=True)
-    available_cols = [col for col in schema_map.values() if col in df.columns]
-    df_filtered = df[available_cols] if available_cols else df
-    return _ensure_canonical_schema(df_filtered, entity_type)
+    try:
+        # Tenta ler como JSONL (cada linha é um JSON)
+        records = []
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line:  # Ignora linhas vazias
+                    try:
+                        record = json.loads(line)
+                        records.append(record)
+                    except json.JSONDecodeError as e:
+                        logging.warning(f"Linha JSON inválida ignorada: {line[:100]}... Erro: {e}")
+        
+        if not records:
+            logging.warning(f"Nenhum registro JSON válido encontrado em {filepath}")
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(records)
+        df = df.astype(str)  # Converte tudo para string
+        df.rename(columns=schema_map, inplace=True)
+        available_cols = [col for col in schema_map.values() if col in df.columns]
+        df_filtered = df[available_cols] if available_cols else df
+        return _ensure_canonical_schema(df_filtered, entity_type)
+    except Exception as e:
+        logging.error(f"Erro ao ler JSON {filepath}: {e}")
+        return pd.DataFrame()
 
 def from_xml_stream(filepath: str, schema_map: dict, entity_type: str, tag: str, chunk_size: int = 1000) -> Iterator[pd.DataFrame]:
     records_chunk = []
@@ -159,23 +189,47 @@ def from_xml_stream(filepath: str, schema_map: dict, entity_type: str, tag: str,
             chunk_df = chunk_df[available_cols]
         yield _ensure_canonical_schema(chunk_df, entity_type)
 
-def from_fhir_json(filepath: str) -> pd.DataFrame:
+def from_fhir_json(filepath: str, entity_type: str) -> pd.DataFrame:
+    """Lê dados FHIR sem dependência externa, usando parsing JSON manual"""
     records = []
-    with open(filepath, 'r', encoding='utf-8') as f:
-        for line in f:
-            try:
-                data = json.loads(line)
-                if data.get('resourceType') != 'Patient': continue
-                patient = Patient(**data)
-                nome = ' '.join(patient.name[0].given) if patient.name and patient.name[0].given else ''
-                sobrenome = patient.name[0].family if patient.name and patient.name[0].family else ''
-                records.append({
-                    'id': patient.id,
-                    'name': f"{nome} {sobrenome}".strip(),
-                    'gender': str(patient.gender).upper()[0] if patient.gender else None,
-                    'managingOrganization': patient.managingOrganization.identifier.value if patient.managingOrganization and patient.managingOrganization.identifier else None
-                })
-            except Exception as e: logging.warning(f"Falha ao processar linha FHIR: {e}")
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    data = json.loads(line.strip())
+                    if data.get('resourceType') != 'Patient': 
+                        continue
+                    
+                    # Extração manual dos dados FHIR
+                    record = {'id': data.get('id', '')}
+                    
+                    # Nome
+                    if 'name' in data and data['name']:
+                        name_parts = []
+                        first_name = data['name'][0]
+                        if 'given' in first_name and first_name['given']:
+                            name_parts.extend(first_name['given'])
+                        if 'family' in first_name:
+                            name_parts.append(first_name['family'])
+                        record['name'] = ' '.join(name_parts)
+                    
+                    # Gênero
+                    record['gender'] = data.get('gender', '').upper()[:1] if data.get('gender') else None
+                    
+                    # Identificadores (CPF, etc.)
+                    if 'identifier' in data:
+                        for identifier in data['identifier']:
+                            if identifier.get('system') == 'cpf':
+                                record['identifier_cpf'] = identifier.get('value', '')
+                    
+                    records.append(record)
+                    
+                except Exception as e: 
+                    logging.warning(f"Falha ao processar linha FHIR: {e}")
+                    
+    except Exception as e:
+        logging.error(f"Erro ao ler arquivo FHIR {filepath}: {e}")
+    
     return pd.DataFrame(records)
 
 def from_hl7(filepath: str, entity_type: str) -> pd.DataFrame:
@@ -218,7 +272,11 @@ def from_hl7(filepath: str, entity_type: str) -> pd.DataFrame:
                             pid_segment = segment
                             break
                     
-                    if pid_segment and len(pid_segment) > 3:
+                    if not pid_segment:
+                        logging.warning("Segmento esperado não encontrado ou campo vazio em uma mensagem HL7: 'No PID segments'")
+                        continue
+                    
+                    if len(pid_segment) > 3:
                         # Extrair dados do PID de forma mais robusta
                         patient_id = str(pid_segment[3][0][0]) if pid_segment[3] and len(pid_segment[3][0]) > 0 else None
                         
@@ -240,9 +298,9 @@ def from_hl7(filepath: str, entity_type: str) -> pd.DataFrame:
                             'pid_5': nome_completo,
                             'pid_8': genero
                         })
+                        
                 except Exception as e:
                     logging.warning(f"Falha ao processar mensagem HL7: {e}")
-                    logging.debug(f"Conteúdo da mensagem problemática: {msg_raw[:100]}...")
                     
     except Exception as e:
         logging.error(f"Erro ao abrir arquivo HL7: {e}")

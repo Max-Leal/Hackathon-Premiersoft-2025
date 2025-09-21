@@ -1,0 +1,17 @@
+MSH|^~\&|SISTEMA_HOSPITAL|HOSPITAL_SAO_LUCAS|SISTEMA_APS|APS_SAUDE|20250921090000||ADT^A01|MSGCTRL001|P|2.3
+EVN|A01|20250921090000
+PID|||paciente-uuid-hl7-001|57991793150^^^BR^SS||Pereira^Antônio||19750315|M|||Rua das Flores 123^^São Paulo^SP^3550308^BRA||(11)99999-1111
+PV1||I|EMERGENCIA^^^|ADM|||DR. House^Gregory^^^^^^|DR. Wilson^James^^^^^^|||SUS|
+IN1|1|PLANO_AMIL|AMIL SAUDE|||||||Plano Básico
+DG1|1||C13|Neoplasia maligna da hipofaringe
+MSH|^~\&|SISTEMA_HOSPITAL|HOSPITAL_SAO_LUCAS|SISTEMA_APS|APS_SAUDE|20250921090500||ADT^A01|MSGCTRL002|P|2.3
+EVN|A01|20250921090500
+PID|||paciente-uuid-hl7-002|27254005540^^^BR^SS||Almeida^Patrícia||19901122|F|||Avenida Central 456^Apto 101^Campinas^SP^3509502^BRA||(19)98888-2222
+PV1||I|UTI^^^|ADM|||DR. House^Gregory^^^^^^|DR. Wilson^James^^^^^^|||CONVENIO|
+IN1|1|PLANO_UNIMED|UNIMED CAMPINAS|||||||Plano Executivo
+DG1|1||Y64|Dispositivos e implantes cardiovasculares e torácicos associados a incidentes adversos
+MSH|^~\&|SISTEMA_HOSPITAL|HOSPITAL_SAO_LUCAS|SISTEMA_APS|APS_SAUDE|20250921091000||ADT^A01|MSGCTRL003|P|2.3
+EVN|A01|20250921091000
+PID|||paciente-uuid-hl7-003|||Souza^Gabriela||20010701|F|||Praça da Sé 789^^São Paulo^SP^3550308^BRA||(11)97777-3333
+PV1||O|AMBULATORIO^^^|ADM|||DR. House^Gregory^^^^^^|DR. Wilson^James^^^^^^|||PARTICULAR|
+DG1|1||S66|Traumatismo de músculo e tendão ao nível do punho e da mão

@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS medicos (
 -- Tabela 6: pacientes (depende de municipios, cid10, hospitais)
 CREATE TABLE IF NOT EXISTS pacientes (
     codigo UUID PRIMARY KEY,
-    cpf VARCHAR(11) UNIQUE NOT NULL,
+    cpf VARCHAR(11) UNIQUE ,
     nome_completo VARCHAR(255) NOT NULL,
     genero CHAR(1) CHECK (genero IN ('M', 'F')),
     cod_municipio BIGINT REFERENCES municipios(codigo_ibge),

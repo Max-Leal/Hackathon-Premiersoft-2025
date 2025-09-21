@@ -9,4 +9,4 @@ COPY src/ /app/src
 
 # Expõe a porta que o Streamlit usa e o inicia
 EXPOSE 8501
-CMD ["streamlit", "run", "src/dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["python", "-m", "streamlit", "run", "src/frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
