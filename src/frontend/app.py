@@ -13,13 +13,21 @@ from db_utils import fetch_data
 
 import base64
 
-def load_svg(svg_file):
-    """Lê um arquivo SVG e o retorna como uma string de imagem em Base64."""
-    with open(svg_file, "r") as f:
-        svg_string = f.read()
-    b64_svg = base64.b64encode(svg_string.encode("utf-8")).decode("utf-8")
-    # Retorna a string formatada para ser usada em uma tag <img>
-    return f"data:image/svg+xml;base64,{b64_svg}"
+def load_svg(image_file):
+    """Lê um arquivo de imagem e o retorna como uma string de imagem em Base64."""
+    try:
+        with open(image_file, "rb") as f:
+            img_bytes = f.read()
+        b64_string = base64.b64encode(img_bytes).decode("utf-8")
+        # Identifica a extensão para o mime type correto
+        extension = image_file.split('.')[-1].lower()
+        if extension == 'svg':
+            return f"data:image/svg+xml;base64,{b64_string}"
+        else:
+            return f"data:image/{extension};base64,{b64_string}"
+    except FileNotFoundError:
+        st.error(f"Arquivo do logo não encontrado em: {image_file}")
+        return ""
 
 # --- ATIVAÇÃO DA CHAVE DE API DO MAPBOX ---
 if "MAPBOX_API_KEY" in st.secrets:
@@ -161,66 +169,65 @@ def get_medico_alocacao_data():
     """
     return fetch_data(query)
 
+# --- FUNÇÕES DE BUSCA DE DADOS (COM CORREÇÃO NOS KPIs) ---
+@st.cache_data(ttl=300) # Cache de 5 minutos
+def get_dashboard_data():
+    """Busca todos os dados agregados necessários para o dashboard de forma segura."""
+    def get_count(table_name):
+        df = fetch_data(f"SELECT COUNT(codigo) FROM {table_name};")
+        if df is not None and not df.empty:
+            return df.iloc[0, 0]
+        return 0
+
+    total_pacientes = get_count("pacientes")
+    total_medicos = get_count("medicos")
+    total_hospitais = get_count("hospitais")
+    
+    genero_df = fetch_data("SELECT genero, COUNT(codigo) AS total FROM pacientes GROUP BY genero;")
+    convenio_df = fetch_data("SELECT convenio, COUNT(codigo) AS total FROM pacientes GROUP BY convenio;")
+    top_cid_df = fetch_data("""
+        SELECT
+            c.codigo || ' - ' || c.descricao AS cid_completo,
+            COUNT(p.codigo) AS total_pacientes
+        FROM pacientes AS p
+        JOIN cid10 AS c ON p.cid_10 = c.codigo
+        GROUP BY c.codigo, c.descricao
+        ORDER BY total_pacientes DESC
+        LIMIT 10;
+    """)
+    
+    return {
+        "total_pacientes": total_pacientes, "total_medicos": total_medicos,
+        "total_hospitais": total_hospitais, "genero_df": genero_df,
+        "convenio_df": convenio_df, "top_cid_df": top_cid_df
+    }
+
+@st.cache_data(ttl=600)
+def get_hospital_geo_data():
+    """Busca dados geográficos e de capacidade dos hospitais."""
+    query = "SELECT nome, ST_Y(localizacao) AS lat, ST_X(localizacao) AS lon, leitos_totais FROM hospitais WHERE localizacao IS NOT NULL;"
+    return fetch_data(query)
 
 # --- FUNÇÕES DAS PÁGINAS ---
 
 def page_dashboard():
     """
-    Dashboard focado nos dados cadastrais disponíveis, sem análise de ocupação.
-    Inclui perfil de pacientes e um gráfico de barras horizontais para os 10 CIDs mais frequentes.
+    Dashboard que chama as funções de busca de dados GLOBAIS.
     """
     st.title("Painel de Saúde Estratégico | APS")
     st.markdown("Análise de indicadores operacionais e de capacidade da rede de saúde.")
 
-    # --- FUNÇÕES DE BUSCA DE DADOS ---
-    @st.cache_data(ttl=600)
-    def get_dashboard_data():
-        """Busca todos os dados agregados necessários para o dashboard."""
-        total_pacientes = fetch_data("SELECT COUNT(codigo) FROM pacientes;").iloc[0, 0]
-        total_medicos = fetch_data("SELECT COUNT(codigo) FROM medicos;").iloc[0, 0]
-        total_hospitais = fetch_data("SELECT COUNT(codigo) FROM hospitais;").iloc[0, 0]
-        genero_df = fetch_data("SELECT genero, COUNT(codigo) AS total FROM pacientes GROUP BY genero;")
-        convenio_df = fetch_data("SELECT convenio, COUNT(codigo) AS total FROM pacientes GROUP BY convenio;")
-        
-        # --- CONSULTA ATUALIZADA PARA INCLUIR O CÓDIGO DO CID ---
-        top_cid_df = fetch_data("""
-            SELECT
-                c.codigo || ' - ' || c.descricao AS cid_completo,
-                COUNT(p.codigo) AS total_pacientes
-            FROM
-                pacientes AS p
-            JOIN
-                cid10 AS c ON p.cid_10 = c.codigo
-            GROUP BY
-                c.codigo, c.descricao
-            ORDER BY
-                total_pacientes DESC
-            LIMIT 10;
-        """)
-        
-        return {
-            "total_pacientes": total_pacientes, "total_medicos": total_medicos,
-            "total_hospitais": total_hospitais, "genero_df": genero_df,
-            "convenio_df": convenio_df, "top_cid_df": top_cid_df
-        }
-
-    @st.cache_data(ttl=600)
-    def get_hospital_geo_data():
-        """Busca dados geográficos e de capacidade dos hospitais."""
-        query = "SELECT nome, ST_Y(localizacao) AS lat, ST_X(localizacao) AS lon, leitos_totais FROM hospitais WHERE localizacao IS NOT NULL;"
-        return fetch_data(query)
-
-    # --- INÍCIO DA RENDERIZAÇÃO DA PÁGINA ---
+    # Chama as funções de busca que estão FORA desta função
     dashboard_data = get_dashboard_data()
     df_hospitais = get_hospital_geo_data()
 
     tab_geral, tab_geo, tab_recursos = st.tabs([" Visão Geral ", " Análise Geográfica ", " Capacidade da Rede "])
 
+    # O resto da função de renderização continua igual...
     with tab_geral:
         st.header("Indicadores Chave de Performance (KPIs)")
         kpi_cols = st.columns(4)
         
-        # (KPIs continuam os mesmos)
         kpi_cols[0].metric("Total de Pacientes", f"{dashboard_data.get('total_pacientes', 0):,}".replace(",", "."))
         kpi_cols[1].metric("Médicos Ativos", f"{dashboard_data.get('total_medicos', 0):,}".replace(",", "."))
         kpi_cols[2].metric("Hospitais Monitorados", dashboard_data.get('total_hospitais', 0))
@@ -241,17 +248,8 @@ def page_dashboard():
             st.subheader("Top 10 Diagnósticos (CID-10)")
             df_cid = dashboard_data.get('top_cid_df', pd.DataFrame())
             if not df_cid.empty:
-                # --- NOVO GRÁFICO PLOTLY ---
-                fig = px.bar(
-                    df_cid,
-                    y='cid_completo',          # A nova coluna com código + descrição no eixo Y
-                    x='total_pacientes',       # A contagem no eixo X
-                    orientation='h',           # 'h' para barras horizontais
-                    labels={'cid_completo': 'Diagnóstico (CID-10)', 'total_pacientes': 'Nº de Pacientes'},
-                    text_auto=True,            # Mostra o valor em cima da barra
-                    title="Diagnósticos Mais Frequentes"
-                )
-                # Ordena as barras do menor para o maior (efeito visual melhor)
+                fig = px.bar(df_cid, y='cid_completo', x='total_pacientes', orientation='h', 
+                             labels={'cid_completo': 'Diagnóstico (CID-10)', 'total_pacientes': 'Nº de Pacientes'}, text_auto=True, title="Diagnósticos Mais Frequentes")
                 fig.update_layout(yaxis={'categoryorder':'total ascending'})
                 st.plotly_chart(fig, use_container_width=True)
             else:
@@ -267,10 +265,8 @@ def page_dashboard():
             else:
                 st.info("Não há dados de gênero para exibir.")
 
-    # (As abas tab_geo e tab_recursos continuam as mesmas da versão anterior)
     with tab_geo:
         st.header("Distribuição Geográfica de Hospitais")
-        # ... (código do mapa aqui)
         if not df_hospitais.empty:
             view_state = pdk.ViewState(latitude=df_hospitais['lat'].mean(), longitude=df_hospitais['lon'].mean(), zoom=9, pitch=50)
             layer = pdk.Layer("ScatterplotLayer", data=df_hospitais, get_position='[lon, lat]', get_color='[200, 30, 0, 160]', get_radius='leitos_totais * 2', pickable=True, auto_highlight=True)
@@ -286,7 +282,6 @@ def page_dashboard():
 
     with tab_recursos:
         st.header("Capacidade da Rede Hospitalar")
-        # ... (código da tabela de recursos aqui)
         if not df_hospitais.empty:
             st.dataframe(df_hospitais, column_config={"nome": "Hospital", "leitos_totais": st.column_config.NumberColumn("Leitos Totais", format="%d"), "lat": None, "lon": None}, use_container_width=True, hide_index=True)
         else:
