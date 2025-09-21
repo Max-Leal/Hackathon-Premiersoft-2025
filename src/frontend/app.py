@@ -107,34 +107,129 @@ st.markdown("""
 
 # --- FUNÇÕES DAS PÁGINAS ---
 
+# --- ERIC ----
+
+@st.cache_data(ttl=600)
+def get_medico_alocacao_data():
+    """Busca dados sobre a alocação de médicos, contando em quantos hospitais cada um atua."""
+    query = """
+    WITH contagem_por_medico AS (
+        -- Primeiro, conta em quantos hospitais cada médico está associado
+        SELECT
+            medico_id,
+            COUNT(hospital_id) AS num_hospitais
+        FROM
+            medico_hospital_associacao
+        GROUP BY
+            medico_id
+    )
+    -- Agora, agrupa os médicos pela quantidade de hospitais em que atuam
+    SELECT
+        CASE
+            WHEN num_hospitais = 1 THEN '1 Hospital'
+            WHEN num_hospitais = 2 THEN '2 Hospitais'
+            ELSE '3+ Hospitais' -- Agrupa todos os que atuam em 3 ou mais
+        END AS num_hospitais, -- Renomeia a coluna para corresponder ao df original
+        COUNT(medico_id) AS total_medicos
+    FROM
+        contagem_por_medico
+    GROUP BY
+        num_hospitais
+    ORDER BY
+        num_hospitais;
+    """
+    return fetch_data(query)
+
+@st.cache_data(ttl=600) # Cache de 10 minutos para não sobrecarregar o banco
+def get_kpi_data():
+    """Busca os dados agregados para os Indicadores Chave de Performance (KPIs)."""
+    total_pacientes_df = fetch_data("SELECT COUNT(codigo) FROM pacientes;")
+    medicos_ativos_df = fetch_data("SELECT COUNT(codigo) FROM medicos;")
+    hospitais_monitorados_df = fetch_data("SELECT COUNT(codigo) FROM hospitais;")
+
+    # Extrai o valor numérico de cada DataFrame de uma única célula
+    total_pacientes = total_pacientes_df.iloc[0, 0] if not total_pacientes_df.empty else 0
+    medicos_ativos = medicos_ativos_df.iloc[0, 0] if not medicos_ativos_df.empty else 0
+    hospitais_monitorados = hospitais_monitorados_df.iloc[0, 0] if not hospitais_monitorados_df.empty else 0
+    
+    return {
+        "total_pacientes": total_pacientes,
+        "medicos_ativos": medicos_ativos,
+        "hospitais_monitorados": hospitais_monitorados
+    }
+
+@st.cache_data(ttl=600)
+def get_top_cid_data():
+    """Busca os 8 principais diagnósticos (CID-10) com base no número de pacientes."""
+    query = """
+    SELECT
+        c.codigo || ' - ' || c.descricao AS cid_descricao,
+        COUNT(p.codigo) AS total_pacientes
+    FROM
+        pacientes AS p
+    INNER JOIN
+        cid10 AS c ON p.cid_10 = c.codigo
+    GROUP BY
+        c.codigo, c.descricao
+    ORDER BY
+        total_pacientes DESC
+    LIMIT 8;
+    """
+    return fetch_data(query)
+
+@st.cache_data(ttl=600)
+def get_hospital_data():
+    """Busca dados detalhados dos hospitais, incluindo geolocalização e ocupação."""
+    # Esta query assume que você está usando PostGIS para a coluna 'localizacao'.
+    # As funções ST_Y e ST_X extraem latitude e longitude, respectivamente.
+    query = """
+    WITH pacientes_por_hospital AS (
+        SELECT
+            hospital_alocado_id,
+            COUNT(codigo) as leitos_ocupados
+        FROM
+            pacientes
+        WHERE
+            hospital_alocado_id IS NOT NULL
+        GROUP BY
+            hospital_alocado_id
+    )
+    SELECT
+        h.nome,
+        ST_Y(h.localizacao) AS lat, -- Extrai a Latitude
+        ST_X(h.localizacao) AS lon, -- Extrai a Longitude
+        h.leitos_totais,
+        COALESCE(p.leitos_ocupados, 0)::int AS leitos_ocupados -- COALESCE para incluir hospitais sem pacientes
+    FROM
+        hospitais h
+    LEFT JOIN
+        pacientes_por_hospital p ON h.codigo = p.hospital_alocado_id;
+    """
+    df = fetch_data(query)
+    
+    if not df.empty:
+        # Calcula a taxa de ocupação, evitando divisão por zero
+        df['taxa_ocupacao'] = np.where(
+            df['leitos_totais'] > 0,
+            df['leitos_ocupados'] / df['leitos_totais'],
+            0
+        )
+    else:
+        # Garante que as colunas existam mesmo se a query não retornar nada
+        df['taxa_ocupacao'] = pd.Series(dtype='float64')
+
+    return df
+
 def page_dashboard():
     st.title("Painel de Saúde Estratégico | APS")
     st.markdown("Análise de indicadores operacionais e de capacidade da rede de saúde.")
 
-    # --- SIMULAÇÃO DE DADOS DINÂMICICOS ---
-    total_pacientes = 1254320
-    medicos_ativos = 2458
-    hospitais_monitorados = 172
-    cid_data = {
-        'cid_descricao': ['I10 - Hipertensão essencial', 'E11 - Diabetes mellitus', 'J44 - DPOC', 'I25 - Doença isquêmica do coração', 'N18 - Doença renal crônica', 'G47 - Distúrbios do sono', 'M54 - Dorsalgia', 'J06 - Infecções agudas'],
-        'total_pacientes': np.random.randint(5000, 20000, size=8)
-    }
-    df_cid = pd.DataFrame(cid_data).sort_values('total_pacientes', ascending=False)
-    hospital_data = {
-        'nome': [f'Hospital {chr(65+i)}' for i in range(10)],
-        'lat': np.random.uniform(-23.50, -23.60, size=10),
-        'lon': np.random.uniform(-46.60, -46.70, size=10),
-        'leitos_totais': np.random.randint(100, 500, size=10),
-        'leitos_ocupados': np.random.randint(50, 480, size=10)
-    }
-    hospital_data['leitos_ocupados'] = np.minimum(hospital_data['leitos_ocupados'], hospital_data['leitos_totais'] - 10)
-    df_hospitais = pd.DataFrame(hospital_data)
-    df_hospitais['taxa_ocupacao'] = (df_hospitais['leitos_ocupados'] / df_hospitais['leitos_totais'])
-    alocacao_data = {
-        'num_hospitais': ['1 Hospital', '2 Hospitais', '3 Hospitais'],
-        'total_medicos': [1200, 858, 400]
-    }
-    df_alocacao_medicos = pd.DataFrame(alocacao_data)
+    # --- CARREGAMENTO DOS DADOS DO BANCO DE DADOS ---
+    # Todas as fontes de dados agora vêm do banco de dados.
+    kpi_data = get_kpi_data()
+    df_cid = get_top_cid_data()
+    df_hospitais = get_hospital_data()
+    df_alocacao_medicos = get_medico_alocacao_data() # <- MUDANÇA AQUI
 
     # --- LAYOUT COM ABAS PARA MELHOR ORGANIZAÇÃO ---
     tab_geral, tab_geo, tab_recursos = st.tabs([
@@ -147,43 +242,53 @@ def page_dashboard():
     with tab_geral:
         st.header("Indicadores Chave de Performance (KPIs)")
     
-        # --- CORREÇÃO DE LAYOUT: KPIs movidos para dentro da aba ---
         kpi_cols = st.columns(4)
-        taxa_ocupacao_geral = df_hospitais['leitos_ocupados'].sum() / df_hospitais['leitos_totais'].sum()
+        
+        if not df_hospitais.empty and df_hospitais['leitos_totais'].sum() > 0:
+            taxa_ocupacao_geral = df_hospitais['leitos_ocupados'].sum() / df_hospitais['leitos_totais'].sum()
+        else:
+            taxa_ocupacao_geral = 0
         
         with kpi_cols[0]:
-            st.metric(label="Total de Pacientes", value=f"{total_pacientes:,}".replace(",", "."))
+            st.metric(label="Total de Pacientes", value=f"{kpi_data.get('total_pacientes', 0):,}".replace(",", "."))
         with kpi_cols[1]:
-            st.metric(label="Taxa de Ocupação Geral", value=f"{taxa_ocupacao_geral:.1%}", delta="-1.5%", delta_color="inverse")
+            st.metric(label="Taxa de Ocupação Geral", value=f"{taxa_ocupacao_geral:.1%}")
         with kpi_cols[2]:
-            st.metric(label="Médicos Ativos", value=f"{medicos_ativos:,}".replace(",", "."))
+            st.metric(label="Médicos Ativos", value=f"{kpi_data.get('medicos_ativos', 0):,}".replace(",", "."))
         with kpi_cols[3]:
-            st.metric(label="Hospitais Monitorados", value=hospitais_monitorados)
+            st.metric(label="Hospitais Monitorados", value=kpi_data.get('hospitais_monitorados', 0))
         
         st.divider()
 
-        # --- CORREÇÃO DE LAYOUT: Gráficos movidos para dentro da aba ---
         chart_cols = st.columns([2, 2])
         with chart_cols[0]:
             st.subheader("Top 8 Diagnósticos (CID-10)")
             st.markdown("Principais condições que levam os pacientes à rede.")
-            st.bar_chart(df_cid, x='cid_descricao', y='total_pacientes', color="#7d53de")
+            if not df_cid.empty:
+                st.bar_chart(df_cid.set_index('cid_descricao'), y='total_pacientes', color="#7d53de")
+            else:
+                st.info("Não há dados de diagnósticos para exibir.")
             
         with chart_cols[1]:
             st.subheader("Alocação de Médicos na Rede")
             st.markdown("Distribuição de médicos pelo número de hospitais em que atuam.")
-            st.data_editor(
-                df_alocacao_medicos,
-                column_config={
-                    "total_medicos": st.column_config.ProgressColumn(
-                        "Total de Médicos", format="%f", min_value=0,
-                        max_value=int(df_alocacao_medicos['total_medicos'].max()),
-                    ),
-                },
-                hide_index=True, use_container_width=True
-            )
-            with st.expander("Ver dados da alocação"):
-                st.dataframe(df_alocacao_medicos, use_container_width=True)
+            
+            if not df_alocacao_medicos.empty:
+                st.data_editor(
+                    df_alocacao_medicos,
+                    column_config={
+                        "num_hospitais": "Atuação",
+                        "total_medicos": st.column_config.ProgressColumn(
+                            "Total de Médicos", format="%d", min_value=0,
+                            max_value=int(df_alocacao_medicos['total_medicos'].max()),
+                        ),
+                    },
+                    hide_index=True, use_container_width=True
+                )
+                with st.expander("Ver dados da alocação"):
+                    st.dataframe(df_alocacao_medicos, use_container_width=True)
+            else:
+                st.info("Não há dados de alocação de médicos para exibir.")
 
     # --- ABA 2: ANÁLISE GEOGRÁFICA ---
     with tab_geo:
@@ -198,27 +303,23 @@ def page_dashboard():
 
         if not df_filtrado.empty:
             view_state = pdk.ViewState(
-                latitude=df_filtrado['lat'].mean(),
-                longitude=df_filtrado['lon'].mean(),
+                latitude=df_filtrado['lat'].mean(), longitude=df_filtrado['lon'].mean(),
                 zoom=10, pitch=50,
             )
-            
             layer = pdk.Layer(
                 "ScatterplotLayer", data=df_filtrado, get_position='[lon, lat]',
                 get_color='[200, 30, 0, 160]', get_radius='leitos_totais',
                 pickable=True, auto_highlight=True
             )
-            
+            df_filtrado = df_filtrado.copy()
             df_filtrado['taxa_ocupacao_formatado'] = df_filtrado['taxa_ocupacao'].apply(lambda x: f"{x:.1%}")
             tooltip = {
                 "html": "<b>{nome}</b><br/>Ocupação: {taxa_ocupacao_formatado}<br/>Leitos: {leitos_ocupados}/{leitos_totais}",
                 "style": {"backgroundColor": "#7d53de", "color": "white"}
             }
-
             r = pdk.Deck(
                 layers=[layer], initial_view_state=view_state,
-                map_style=pdk.map_styles.MAPBOX_LIGHT, # Usa um estilo padrão do Mapbox
-                tooltip=tooltip
+                map_style=pdk.map_styles.MAPBOX_LIGHT, tooltip=tooltip
             )
             st.pydeck_chart(r)
             st.info("Passe o mouse sobre os pontos para ver detalhes. O tamanho do círculo representa a capacidade total de leitos.")
@@ -234,6 +335,8 @@ def page_dashboard():
             df_hospitais,
             column_config={
                 "nome": "Hospital",
+                "leitos_totais": "Leitos Totais",
+                "leitos_ocupados": "Leitos Ocupados",
                 "taxa_ocupacao": st.column_config.ProgressColumn(
                     "Taxa de Ocupação", format="%.1f%%", min_value=0, max_value=1,
                 ),
@@ -241,6 +344,8 @@ def page_dashboard():
             },
             use_container_width=True, hide_index=True
         )
+
+# --- FINAL ERIC ---
 
 def page_upload():
     st.title("Ingestão e Processamento de Dados 📤")
