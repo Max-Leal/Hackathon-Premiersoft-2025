@@ -243,30 +243,91 @@ def page_dashboard():
         )
 
 def page_upload():
+    """
+    Página funcional para upload de arquivos, salvamento no diretório raw
+    e execução do pipeline de ETL. Todos os uploaders aceitam os 4 tipos de arquivo.
+    """
     st.title("Ingestão e Processamento de Dados 📤")
-    st.markdown("Importe os arquivos de dados brutos para a plataforma.")
+    st.markdown("Importe os arquivos de dados brutos para a plataforma. Os arquivos serão salvos em `data/raw/`.")
 
+    # Define a lista de tipos de arquivo permitidos para reutilização
+    ALLOWED_FILE_TYPES = ['xlsx', 'xml', 'json', 'hl7']
+
+    # --- Lógica de Caminhos ---
+    try:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+        RAW_DATA_PATH = os.path.join(project_root, "data", "raw")
+        PIPELINE_SCRIPT_PATH = os.path.join(project_root, "src", "pipeline", "main.py")
+        os.makedirs(RAW_DATA_PATH, exist_ok=True)
+    except Exception as e:
+        st.error(f"Erro ao configurar os caminhos do projeto: {e}")
+        st.info("Certifique-se de que a estrutura de pastas 'data/raw' e 'src/pipeline' existe.")
+        return
+
+    # --- Interface de Upload ---
     cols = st.columns(2)
     with cols[0]:
         st.subheader("Dados Cadastrais")
-        st.file_uploader("Hospitais (Excel, JSON)", type=['xlsx', 'json'], accept_multiple_files=True)
-        st.file_uploader("Médicos (XML, JSON)", type=['xml', 'json'], accept_multiple_files=True)
-        st.file_uploader("Pacientes (CSV, JSON)", type=['csv', 'json'], accept_multiple_files=True)
+        hospitais_files = st.file_uploader("Hospitais", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
+        medicos_files = st.file_uploader("Médicos", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
+        pacientes_files = st.file_uploader("Pacientes", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
 
     with cols[1]:
         st.subheader("Dados de Padrões")
-        st.file_uploader("CID-10 (CSV)", type=['csv'])
-        st.file_uploader("Estados e Municípios (JSON)", type=['json'])
+        cid_files = st.file_uploader("CID-10", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
+        estados_files = st.file_uploader("Estados", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
+        municipios_files = st.file_uploader("Municípios", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
 
     st.write("---")
+
+    # --- Lógica de Execução ---
     if st.button("Iniciar Processamento", use_container_width=True, type="primary"):
-        with st.spinner('Processando arquivos... Isso pode levar alguns minutos.'):
-            time.sleep(5)
-        st.success("Processamento concluído com sucesso!")
-        with st.expander("Ver Relatório de Processamento"):
-            st.write("✅ **Hospitais:** 2 arquivos processados, 1500 registros únicos, 25 duplicados removidos.")
-            st.warning("⚠️ **Médicos:** 1 arquivo com erro de formatação (enviado para DLQ). 2 arquivos processados.")
-            st.info("Arquivos inválidos foram movidos para a 'Dead Letter Queue' (DLQ) para análise manual.")
+        # Agrupa todos os arquivos em uma única lista
+        all_files = (hospitais_files + medicos_files + pacientes_files + 
+                     cid_files + estados_files + municipios_files)
+
+        if not all_files:
+            st.warning("Nenhum arquivo foi selecionado para upload.")
+            return
+
+        # 1. Salvar os arquivos
+        progress_bar = st.progress(0, text="Salvando arquivos...")
+        for i, uploaded_file in enumerate(all_files):
+            dest_path = os.path.join(RAW_DATA_PATH, uploaded_file.name)
+            try:
+                with open(dest_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+            except Exception as e:
+                st.error(f"Erro ao salvar o arquivo {uploaded_file.name}: {e}")
+            progress_bar.progress((i + 1) / len(all_files), text=f"Salvando {uploaded_file.name}...")
+        
+        progress_bar.empty()
+        st.success(f"**{len(all_files)} arquivo(s)** salvo(s) com sucesso na pasta `data/raw/`.")
+
+        # 2. Executar o pipeline de ETL
+        with st.spinner("Executando o pipeline de ETL... Isso pode levar alguns minutos."):
+            try:
+                command = ["python", PIPELINE_SCRIPT_PATH]
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    cwd=project_root,
+                    check=True
+                )
+
+                st.success("✅ **Pipeline de ETL concluído com sucesso!**")
+                with st.expander("Ver Relatório de Processamento (Logs do Pipeline)"):
+                    st.code(result.stdout, language='log')
+
+            except subprocess.CalledProcessError as e:
+                st.error("❌ **Ocorreu um erro durante a execução do pipeline.**")
+                with st.expander("Ver Detalhes do Erro"):
+                    st.code(e.stderr, language='log')
+            except FileNotFoundError:
+                st.error(f"Erro: O script do pipeline não foi encontrado em '{PIPELINE_SCRIPT_PATH}'.")
+            except Exception as e:
+                st.error(f"Um erro inesperado ocorreu: {e}")
 
 def page_alocacao():
     """
@@ -282,20 +343,21 @@ def page_alocacao():
     # Cria as abas para separar os relatórios
     tab_medicos, tab_pacientes = st.tabs(["Relatório de Médicos", "Relatório de Pacientes"])
 
-    # --- ABA: RELATÓRIO DE ALOCAÇÕES DE MÉDICOS ---
+    # --- ABA: RELATÓRIO DE ALOCAÇÕES DE MÉDICOS (ATUALIZADA) ---
     with tab_medicos:
         st.header("Associações Atuais: Médicos e Hospitais")
-        st.markdown("A tabela abaixo mostra todos os médicos alocados, com detalhes sobre seus hospitais e municípios correspondentes.")
+        st.markdown("A tabela abaixo mostra todos os médicos alocados, com detalhes sobre onde moram e onde trabalham.")
 
         with st.spinner("Carregando relatório de alocação de médicos..."):
-            # Consulta SQL para buscar os dados detalhados dos médicos alocados
+            # --- CONSULTA ATUALIZADA ---
             query_medicos = """
                 SELECT
                     m.nome_completo AS medico,
                     m.especialidade AS especialidade_medico,
+                    mun_medico.nome AS municipio_medico,
                     h.nome AS hospital,
                     h.especialidades AS especialidades_hospital,
-                    mun.nome AS municipio_hospital
+                    mun_hospital.nome AS municipio_hospital
                 FROM
                     medico_hospital_associacao AS mha
                 JOIN
@@ -303,7 +365,9 @@ def page_alocacao():
                 JOIN
                     hospitais AS h ON mha.hospital_id = h.codigo
                 JOIN
-                    municipios AS mun ON h.municipio_id = mun.codigo_ibge
+                    municipios AS mun_hospital ON h.municipio_id = mun_hospital.codigo_ibge
+                JOIN
+                    municipios AS mun_medico ON m.municipio_id = mun_medico.codigo_ibge
                 ORDER BY
                     m.nome_completo, h.nome;
             """
@@ -315,13 +379,12 @@ def page_alocacao():
             else:
                 st.info("O processo de alocação automática ainda não associou médicos a hospitais.")
 
-    # --- ABA: RELATÓRIO DE ALOCAÇÕES DE PACIENTES ---
+    # --- ABA: RELATÓRIO DE ALOCAÇÕES DE PACIENTES (SEM ALTERAÇÃO) ---
     with tab_pacientes:
         st.header("Alocações Atuais: Pacientes e Hospitais")
         st.markdown("A tabela abaixo mostra todos os pacientes que foram alocados a um hospital pelo sistema.")
 
         with st.spinner("Carregando relatório de alocação de pacientes..."):
-            # Consulta SQL para buscar os dados detalhados dos pacientes alocados
             query_pacientes = """
                 SELECT
                     p.nome_completo AS paciente,
