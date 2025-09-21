@@ -30,6 +30,11 @@ docker-compose up -d db
 docker-compose run pipeline
 docker-compose up
 ```
+Ou
+```bash
+docker-compose up --build
+````
+
 ### 2. Instale as Dependências Python
 Após o banco estar rodando:
 
