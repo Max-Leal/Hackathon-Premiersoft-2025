@@ -170,7 +170,7 @@ def get_medico_alocacao_data():
     return fetch_data(query)
 
 # --- FUNÇÕES DE BUSCA DE DADOS (COM CORREÇÃO NOS KPIs) ---
-@st.cache_data(ttl=300) # Cache de 5 minutos
+@st.cache_data(ttl=10) 
 def get_dashboard_data():
     """Busca todos os dados agregados necessários para o dashboard de forma segura."""
     def get_count(table_name):
