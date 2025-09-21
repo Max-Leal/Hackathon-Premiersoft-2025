@@ -9,6 +9,7 @@ psycopg2-binary==2.9.9
 geopy
 # Dashboard
 streamlit==1.35.0
-
+fhir.resources
+hl7
 # Geo (opcional, se fizermos os cálculos em Python)
 geopandas==0.14.4
