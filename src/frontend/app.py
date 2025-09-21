@@ -10,6 +10,7 @@ import random # Adicione esta linha
 import pydeck as pdk # Biblioteca para mapas avançados
 import plotly.express as px
 from db_utils import fetch_data
+
 import base64
 
 def load_svg(svg_file):
@@ -580,7 +581,7 @@ def page_entidades():
 # --- SIDEBAR (SEU CÓDIO ORIGINAL) ---
 with st.sidebar:
     # Define o caminho para o seu arquivo de logo
-    LOGO_FILE = "./assets/premiersoft_icon.svg"
+    LOGO_FILE = "assets/premiersoft_icon.svg"
     
     # Chama a função para carregar e codificar o SVG
     logo_b64_string = load_svg(LOGO_FILE)
@@ -589,7 +590,7 @@ with st.sidebar:
     st.markdown(
         f"""
         <div style="display: flex; align-items: center; margin-bottom: 2rem;">
-            <img src="{logo_b64_string}" width="64" height="64"/>
+            <img src="{logo_b64_string}" width="64" height="64" />
             <h1 style="font-weight:bold; font-size: 24px; margin: 0 0 0 10px; color: #1E2A3B;">APS
                 <span style="font-size: 14px; color: #8A91A8; font-weight: 500;">v.01</span>
             </h1>
@@ -605,7 +606,6 @@ with st.sidebar:
         default_index=0,
         orientation="vertical",
     )
-
 # --- ROTEAMENTO DAS PÁGINAS ---
 if selected == "Dashboard":
     page_dashboard()
