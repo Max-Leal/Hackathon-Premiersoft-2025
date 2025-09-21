@@ -1,9 +1,12 @@
+# src/common/geography.py
+
 import math
+import pandas as pd
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     """Calcula a distância em km entre dois pontos geográficos."""
-    if any(v is None for v in [lat1, lon1, lat2, lon2]):
-        return float('inf') # Retorna infinito se alguma coordenada for nula
+    if any(v is None or pd.isna(v) for v in [lat1, lon1, lat2, lon2]):
+        return float('inf')  # Retorna infinito se alguma coordenada for nula
 
     R = 6371  # Raio da Terra em km
     dLat = math.radians(lat2 - lat1)

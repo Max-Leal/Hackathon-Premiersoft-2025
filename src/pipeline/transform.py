@@ -6,7 +6,7 @@ from typing import Iterator, Dict
 import math
 import uuid
 import random
-
+from ..common.geography import haversine_distance 
 # --- Funções Auxiliares (sem alterações, apenas garantindo que estejam completas) ---
 
 def clean_name(full_name: str) -> str:
@@ -163,7 +163,9 @@ def run(dataframes: Dict[str, pd.DataFrame | Iterator]) -> Dict[str, pd.DataFram
             df_hospitais['especialidades'] = df_hospitais['especialidades'].fillna('').astype(str).str.split(';').apply(lambda s: [spec.strip() for spec in s if spec.strip()])
         df_hospitais = pd.merge(df_hospitais, df_municipios[['codigo_ibge', 'latitude', 'longitude']], left_on='municipio_id', right_on='codigo_ibge', how='left').dropna(subset=['latitude', 'longitude'])
         df_hospitais['localizacao'] = df_hospitais.apply(create_point_string, axis=1)
-        dataframes['hospitais'] = df_hospitais[['codigo', 'nome', 'municipio_id', 'especialidades', 'leitos_totais', 'localizacao']]
+        final_cols = ['codigo', 'nome', 'municipio_id', 'especialidades', 'leitos_totais', 'localizacao', 'latitude', 'longitude']
+        existing_cols = [col for col in final_cols if col in df_hospitais.columns]
+        dataframes['hospitais'] = df_hospitais[existing_cols]
 
     all_hospitals_with_coords, general_hospitals_ids = [], []
     if df_hospitais is not None and not df_hospitais.empty:
@@ -214,20 +216,59 @@ def run(dataframes: Dict[str, pd.DataFrame | Iterator]) -> Dict[str, pd.DataFram
             result = process_single_pacientes_chunk(chunk)
             if result is not None: yield result
 
-    df_medicos, df_cid10 = dataframes.get('medicos'), dataframes.get('cid10')
-    if df_cid10 is not None: df_cid10['especialidade'] = df_cid10['codigo'].astype(str).apply(get_especialidade_from_cid)
-    if df_estados is not None: dataframes['estados'] = df_estados[['codigo_uf', 'uf', 'nome']]
+    df_medicos = dataframes.get('medicos')
+    df_cid10 = dataframes.get('cid10')
+    
+    # Processa a tabela CID-10
+    if df_cid10 is not None: 
+        df_cid10['especialidade'] = df_cid10['codigo'].astype(str).apply(get_especialidade_from_cid)
+        dataframes['cid10'] = df_cid10 # Garante que a coluna nova seja salva
+
+    # Processa a tabela de estados
+    if df_estados is not None: 
+        dataframes['estados'] = df_estados[['codigo_uf', 'uf', 'nome']]
+
+    # Processa a tabela de médicos
     if df_medicos is not None:
-        if 'cidade' in df_medicos.columns: df_medicos.rename(columns={'cidade': 'municipio_id'}, inplace=True)
+        # --- Início do bloco corrigido ---
+        if 'cidade' in df_medicos.columns: 
+            df_medicos.rename(columns={'cidade': 'municipio_id'}, inplace=True)
+        
         df_medicos['municipio_id'] = pd.to_numeric(df_medicos['municipio_id'], errors='coerce')
         df_medicos.dropna(subset=['municipio_id'], inplace=True)
         df_medicos['municipio_id'] = df_medicos['municipio_id'].astype(int)
-        df_medicos = df_medicos[df_medicos['municipio_id'].isin(valid_municipio_ids)]
+        df_medicos = df_medicos[df_medicos['municipio_id'].isin(valid_municipio_ids)].copy()
+        
+        # Adiciona as coordenadas de latitude e longitude do município ao médico
+        if df_municipios is not None:
+            df_medicos = pd.merge(
+                df_medicos,
+                df_municipios[['codigo_ibge', 'latitude', 'longitude']],
+                left_on='municipio_id',
+                right_on='codigo_ibge',
+                how='left'
+            )
+            # Remove médicos cujo município não tem coordenadas válidas
+            df_medicos.dropna(subset=['latitude', 'longitude'], inplace=True)
+
         if 'especialidade' in df_medicos.columns:
             df_medicos['especialidade'] = df_medicos['especialidade'].str.strip()
+        
         df_medicos['nome_completo'] = df_medicos['nome_completo'].apply(clean_name)
-        dataframes['medicos'] = df_medicos[['codigo', 'nome_completo', 'especialidade', 'municipio_id']]
-    if df_municipios is not None: dataframes['municipios'] = df_municipios[['codigo_ibge', 'nome', 'codigo_uf', 'localizacao']]
+        
+        # Garante que as colunas de coordenadas sejam incluídas na saída
+        final_cols = ['codigo', 'nome_completo', 'especialidade', 'municipio_id', 'latitude', 'longitude']
+        # Filtra para manter apenas as colunas que realmente existem no DataFrame
+        existing_cols = [col for col in final_cols if col in df_medicos.columns]
+        dataframes['medicos'] = df_medicos[existing_cols]
+        # --- Fim do bloco corrigido ---
+
+    # Processa a tabela de municípios
+    if df_municipios is not None: 
+        dataframes['municipios'] = df_municipios[['codigo_ibge', 'nome', 'codigo_uf', 'localizacao']]
+    
+    # Inicia o gerador de transformação de pacientes
     dataframes['pacientes'] = safe_transform_pacientes(dataframes.get('pacientes'))
+    
     logging.info("Etapa de transformação concluída.")
     return dataframes

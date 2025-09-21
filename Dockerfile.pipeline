@@ -1,11 +1,26 @@
+# Dockerfile.pipeline
+
 FROM python:3.11-slim
 
+# Define o diretório de trabalho raiz do projeto dentro do container
 WORKDIR /app
 
+# Copia o arquivo de dependências primeiro para otimizar o cache do Docker
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copia a pasta 'src' do seu computador para '/app/src' no container
+COPY ./src ./src
 
-# Usar caminho absoluto para garantir que encontre o arquivo
-CMD ["python", "/app/src/main.py"]
+# Copia o 'main.py' da raiz do seu computador para '/app/main.py' no container
+COPY main.py .
+
+# Copia a pasta de dados para dentro do container, para que o pipeline a encontre
+COPY ./data ./data
+
+# Define a variável de ambiente PYTHONPATH.
+# Isso diz ao Python para procurar módulos a partir de /app, resolvendo o "No module named 'src'"
+ENV PYTHONPATH="/app"
+
+# Comando para executar o pipeline. Ele agora procura main.py na raiz do app.
+CMD ["python", "main.py"]

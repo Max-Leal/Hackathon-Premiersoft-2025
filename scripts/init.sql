@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS hospitais (
     municipio_id BIGINT REFERENCES municipios(codigo_ibge),
     especialidades TEXT[],
     leitos_totais INT CHECK (leitos_totais >= 0),
-    localizacao GEOMETRY(Point, 4326)
+    localizacao GEOMETRY(Point, 4326),
+    latitude DOUBLE PRECISION,   
+    longitude DOUBLE PRECISION
 );
 CREATE INDEX idx_hospitais_especialidades ON hospitais USING GIN (especialidades);
 CREATE INDEX idx_hospitais_localizacao ON hospitais USING GIST (localizacao);

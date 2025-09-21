@@ -3,7 +3,7 @@
 import logging
 import pandas as pd
 from typing import Dict, Iterator
-from ingestion import converter
+from ..ingestion import converter
 from .extract_utils import read_excel_cid10
 
 def run() -> Dict:
