@@ -18,3 +18,7 @@ textColor="#1E202A"
 
 # Fonte.
 font="sans serif"
+
+# Tamanho maximo de upload
+[server]
+maxUploadSize = 10000
