@@ -13,8 +13,8 @@ def run() -> Dict:
         ('hospitais', 'data/raw/hospitais.csv'),
         #('hospitais', 'data/raw/hospitais_teste.jsonl'),
         ('medicos', 'data/raw/medicos_amostra.csv'),
-        ('pacientes', 'data/raw/pacientes_amostra.xml'),
-        ('pacientes', 'data/raw/pacientes_fhir.jsonl'),
+        ('pacientes', 'data/raw/pacientes.xml'),
+        #('pacientes', 'data/raw/pacientes_fhir.jsonl'),
         ('pacientes', 'data/raw/pacientes_adt_completo.hl7'),
     ]
     
