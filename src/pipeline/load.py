@@ -1,3 +1,4 @@
+
 # src/pipeline/load.py
 
 import logging
@@ -254,24 +255,56 @@ def alocar_e_carregar_medicos(engine):
 # --- Função Principal de Carga ---
 
 def run(dataframes: Dict[str, pd.DataFrame | Iterator]):
-    logging.info("Iniciando a etapa de carga...")
+    logging.info("Iniciando a etapa de carga inteligente e segura...")
     engine = get_database_engine()
 
+    # A ordem de carga é crucial e deve ser mantida
     load_order = ['estados', 'municipios', 'cid10', 'hospitais', 'medicos']
+
     for table_name in load_order:
-        data = dataframes.get(table_name)
-        if data is None: continue
-        clear_table(engine, table_name)
-        if isinstance(data, pd.DataFrame):
-            array_cols = ['especialidades'] if table_name == 'hospitais' else []
-            load_dataframe_to_table(engine, data, table_name, array_cols)
-    
-    clear_table(engine, 'pacientes')
-    pacientes_generator = dataframes.get('pacientes')
-    if pacientes_generator:
-        load_pacientes_with_dynamic_cids(engine, pacientes_generator)
-    
-    alocar_e_carregar_medicos(engine)
+        # VERIFICAÇÃO PRINCIPAL: só atua na tabela se houver dados novos para ela
+        if table_name in dataframes:
+            data = dataframes.get(table_name)
+            
+            # Garante que não é um iterador ou DataFrame vazio
+            is_valid_data = False
+            if isinstance(data, pd.DataFrame) and not data.empty:
+                is_valid_data = True
+            # No caso de iteradores, não podemos verificar se está vazio ainda, então consideramos válido
+            elif isinstance(data, Iterator):
+                is_valid_data = True
+
+            if is_valid_data:
+                logging.info(f"Novos dados para '{table_name}' detectados. Iniciando recarga...")
+                clear_table(engine, table_name)
+                
+                # A lógica de carga original é mantida
+                if isinstance(data, pd.DataFrame):
+                    array_cols = ['especialidades'] if table_name == 'hospitais' else []
+                    load_dataframe_to_table(engine, data, table_name, array_cols)
+            else:
+                logging.warning(f"Dados para '{table_name}' fornecidos, mas estão vazios. Nenhuma ação será tomada.")
+        else:
+            logging.info(f"Nenhum dado de upload para '{table_name}'. A tabela existente será preservada.")
+
+    # --- Tratamento Especial para Pacientes ---
+    # Usa a sua função customizada, mas apenas se dados de pacientes foram enviados
+    if 'pacientes' in dataframes:
+        logging.info("Novos dados para 'pacientes' detectados. Iniciando recarga com criação dinâmica de CIDs...")
+        clear_table(engine, 'pacientes')
+        pacientes_generator = dataframes.get('pacientes')
+        if pacientes_generator:
+            # Sua função original é chamada aqui, preservando a funcionalidade
+            load_pacientes_with_dynamic_cids(engine, pacientes_generator)
+
+    # --- Tratamento Inteligente para Alocação de Médicos ---
+    # A realocação só é necessária se os dados que a influenciam (médicos, hospitais, municípios) mudaram.
+    if 'medicos' in dataframes or 'hospitais' in dataframes or 'municipios' in dataframes:
+        logging.info("Alterações em médicos, hospitais ou municípios detectadas. Executando a realocação de médicos...")
+        # Sua função original é chamada aqui, preservando a funcionalidade
+        alocar_e_carregar_medicos(engine)
+    else:
+        logging.info("Nenhuma alteração em médicos, hospitais ou municípios. A alocação de médicos existente será preservada.")
     
     engine.dispose()
     logging.info("Etapa de carga concluída.")

@@ -10,6 +10,7 @@ import random # Adicione esta linha
 import pydeck as pdk # Biblioteca para mapas avançados
 import plotly.express as px
 from db_utils import fetch_data
+import subprocess
 
 import base64
 
@@ -295,37 +296,40 @@ def page_upload():
     e execução do pipeline de ETL. Todos os uploaders aceitam os 4 tipos de arquivo.
     """
     st.title("Ingestão e Processamento de Dados")
-    st.markdown("Importe os arquivos de dados brutos para a plataforma. Os arquivos serão salvos em `data/raw/`.")
+    st.markdown("Importe os arquivos de dados brutos para a plataforma. O sistema irá salvá-los e iniciar o pipeline de processamento automaticamente.")
 
     # Define a lista de tipos de arquivo permitidos para reutilização
-    ALLOWED_FILE_TYPES = ['xlsx', 'xml', 'json', 'hl7']
+    ALLOWED_FILE_TYPES = ['csv', 'xlsx', 'xml', 'json', 'jsonl', 'hl7']
 
     # --- Lógica de Caminhos ---
     try:
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+        # Encontra o caminho absoluto da raiz do projeto a partir da localização do script atual
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         RAW_DATA_PATH = os.path.join(project_root, "data", "raw")
-        PIPELINE_SCRIPT_PATH = os.path.join(project_root, "src", "pipeline", "main.py")
+        PIPELINE_SCRIPT_PATH = os.path.join(project_root, "src", "main.py")
+        
+        # Garante que o diretório de destino existe
         os.makedirs(RAW_DATA_PATH, exist_ok=True)
     except Exception as e:
         st.error(f"Erro ao configurar os caminhos do projeto: {e}")
-        st.info("Certifique-se de que a estrutura de pastas 'data/raw' e 'src/pipeline' existe.")
+        st.info("Certifique-se de que a estrutura de pastas 'data/raw' e 'src/main.py' existe.")
         return
 
     # --- Interface de Upload ---
     cols = st.columns(2)
     with cols[0]:
         st.subheader("Dados Cadastrais")
-        hospitais_files = st.file_uploader("Hospitais", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
-        medicos_files = st.file_uploader("Médicos", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
-        pacientes_files = st.file_uploader("Pacientes", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
+        hospitais_files = st.file_uploader("Hospitais", type=ALLOWED_FILE_TYPES, accept_multiple_files=True, key="hosp")
+        medicos_files = st.file_uploader("Médicos", type=ALLOWED_FILE_TYPES, accept_multiple_files=True, key="med")
+        pacientes_files = st.file_uploader("Pacientes", type=ALLOWED_FILE_TYPES, accept_multiple_files=True, key="pac")
 
     with cols[1]:
         st.subheader("Dados de Padrões")
-        cid_files = st.file_uploader("CID-10", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
-        estados_files = st.file_uploader("Estados", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
-        municipios_files = st.file_uploader("Municípios", type=ALLOWED_FILE_TYPES, accept_multiple_files=True)
+        cid_files = st.file_uploader("CID-10", type=ALLOWED_FILE_TYPES, accept_multiple_files=True, key="cid")
+        estados_files = st.file_uploader("Estados", type=ALLOWED_FILE_TYPES, accept_multiple_files=True, key="est")
+        municipios_files = st.file_uploader("Municípios", type=ALLOWED_FILE_TYPES, accept_multiple_files=True, key="mun")
 
-    st.write("---")
+    st.divider()
 
     # --- Lógica de Execução ---
     if st.button("Iniciar Processamento", use_container_width=True, type="primary"):
@@ -354,13 +358,15 @@ def page_upload():
         # 2. Executar o pipeline de ETL
         with st.spinner("Executando o pipeline de ETL... Isso pode levar alguns minutos."):
             try:
+                # O comando para rodar o pipeline a partir da raiz do projeto
                 command = ["python", PIPELINE_SCRIPT_PATH]
+                
                 result = subprocess.run(
                     command,
-                    capture_output=True,
-                    text=True,
-                    cwd=project_root,
-                    check=True
+                    capture_output=True, # Captura stdout e stderr
+                    text=True,           # Decodifica a saída como texto
+                    cwd=project_root,    # Define o diretório de trabalho para a raiz do projeto
+                    check=True           # Lança uma exceção se o script retornar um erro
                 )
 
                 st.success("**Pipeline de ETL concluído com sucesso!**")
@@ -372,7 +378,7 @@ def page_upload():
                 with st.expander("Ver Detalhes do Erro"):
                     st.code(e.stderr, language='log')
             except FileNotFoundError:
-                st.error(f"Erro: O script do pipeline não foi encontrado em '{PIPELINE_SCRIPT_PATH}'.")
+                st.error(f"Erro: O script do pipeline não foi encontrado em '{PIPELINE_SCRIPT_PATH}'. Verifique o caminho.")
             except Exception as e:
                 st.error(f"Um erro inesperado ocorreu: {e}")
 
