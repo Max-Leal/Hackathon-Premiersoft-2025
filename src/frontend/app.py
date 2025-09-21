@@ -31,10 +31,9 @@ st.markdown("""
     [data-testid="stSidebar"] {
         box-shadow: 3px 0px 15px rgba(0, 0, 0, 0.05);
     }
-    [data-testid="stSidebar"] > div:first-child {
-        background-color: #FFFFFF;
-        padding: 1.5rem 0.75rem; 
-    }
+    [data-testid="stSidebar"] {
+    box-shadow: 5px 0px 20px -5px rgba(0, 0, 0, 0.2);
+}
     /* Estilos do option_menu (links) */
     .nav-link {
         border-radius: 0.5rem;
@@ -75,6 +74,12 @@ st.markdown("""
         border-radius: 12px;
         padding: 20px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+    }
+            [data-testid="stMetric"]:hover {
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        transform: translateY(-2px);
+        transition: all 0.2s ease-in-out;
+        border-color: #76BFAC;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -284,7 +289,7 @@ def page_upload():
     Página funcional para upload de arquivos, salvamento no diretório raw
     e execução do pipeline de ETL. Todos os uploaders aceitam os 4 tipos de arquivo.
     """
-    st.title("Ingestão e Processamento de Dados 📤")
+    st.title("Ingestão e Processamento de Dados")
     st.markdown("Importe os arquivos de dados brutos para a plataforma. Os arquivos serão salvos em `data/raw/`.")
 
     # Define a lista de tipos de arquivo permitidos para reutilização
@@ -353,12 +358,12 @@ def page_upload():
                     check=True
                 )
 
-                st.success("✅ **Pipeline de ETL concluído com sucesso!**")
+                st.success("**Pipeline de ETL concluído com sucesso!**")
                 with st.expander("Ver Relatório de Processamento (Logs do Pipeline)"):
                     st.code(result.stdout, language='log')
 
             except subprocess.CalledProcessError as e:
-                st.error("❌ **Ocorreu um erro durante a execução do pipeline.**")
+                st.error("**Ocorreu um erro durante a execução do pipeline.**")
                 with st.expander("Ver Detalhes do Erro"):
                     st.code(e.stderr, language='log')
             except FileNotFoundError:
@@ -371,7 +376,7 @@ def page_alocacao():
     Esta página exibe os relatórios do processo de alocação automática,
     separando os resultados de médicos e pacientes em abas distintas.
     """
-    st.title("Relatórios de Alocação Automática 🧠")
+    st.title("Relatórios de Alocação Automática")
     st.markdown(
         "Navegue pelas abas para visualizar os resultados do processo de alocação "
         "gerado pelo sistema."
@@ -495,7 +500,7 @@ def page_entidades():
                 st.info(f"Nenhum registro encontrado em '{table_name}' com o filtro atual.")
 
     # --- Layout Principal da Página ---
-    st.title("Consulta de Entidades Cadastradas 📋")
+    st.title("Consulta de Entidades Cadastradas")
     st.markdown("Navegue e pesquise pelos dados já consolidados na plataforma.")
 
     # Define as abas
@@ -527,7 +532,7 @@ def page_entidades():
 
     # --- Aba de Pacientes ---
     with tabs[2]:
-        st.warning("⚠️ A visualização de dados de pacientes deve seguir as políticas de privacidade (LGPD).")
+        st.warning("A visualização de dados de pacientes deve seguir as políticas de privacidade (LGPD).")
         display_table_data(
             title="Pacientes Cadastrados",
             table_name="pacientes",
