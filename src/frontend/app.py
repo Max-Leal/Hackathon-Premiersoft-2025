@@ -8,6 +8,7 @@ import numpy as np
 import time
 import random # Adicione esta linha
 import pydeck as pdk # Biblioteca para mapas avançados
+import plotly.express as px
 from db_utils import fetch_data
 
 # --- ATIVAÇÃO DA CHAVE DE API DO MAPBOX ---
@@ -149,92 +150,132 @@ def get_medico_alocacao_data():
 # --- FUNÇÕES DAS PÁGINAS ---
 
 def page_dashboard():
+    """
+    Dashboard focado nos dados cadastrais disponíveis, sem análise de ocupação.
+    Inclui perfil de pacientes e um gráfico de barras horizontais para os 10 CIDs mais frequentes.
+    """
     st.title("Painel de Saúde Estratégico | APS")
     st.markdown("Análise de indicadores operacionais e de capacidade da rede de saúde.")
 
-    # --- CARREGAMENTO DOS DADOS REAIS DO BANCO DE DADOS ---
-    kpi_data = get_kpi_data()
-    df_cid = get_top_cid_data()
-    df_hospitais = get_hospital_data()
-    df_alocacao_medicos = get_medico_alocacao_data()
+    # --- FUNÇÕES DE BUSCA DE DADOS ---
+    @st.cache_data(ttl=600)
+    def get_dashboard_data():
+        """Busca todos os dados agregados necessários para o dashboard."""
+        total_pacientes = fetch_data("SELECT COUNT(codigo) FROM pacientes;").iloc[0, 0]
+        total_medicos = fetch_data("SELECT COUNT(codigo) FROM medicos;").iloc[0, 0]
+        total_hospitais = fetch_data("SELECT COUNT(codigo) FROM hospitais;").iloc[0, 0]
+        genero_df = fetch_data("SELECT genero, COUNT(codigo) AS total FROM pacientes GROUP BY genero;")
+        convenio_df = fetch_data("SELECT convenio, COUNT(codigo) AS total FROM pacientes GROUP BY convenio;")
+        
+        # --- CONSULTA ATUALIZADA PARA INCLUIR O CÓDIGO DO CID ---
+        top_cid_df = fetch_data("""
+            SELECT
+                c.codigo || ' - ' || c.descricao AS cid_completo,
+                COUNT(p.codigo) AS total_pacientes
+            FROM
+                pacientes AS p
+            JOIN
+                cid10 AS c ON p.cid_10 = c.codigo
+            GROUP BY
+                c.codigo, c.descricao
+            ORDER BY
+                total_pacientes DESC
+            LIMIT 10;
+        """)
+        
+        return {
+            "total_pacientes": total_pacientes, "total_medicos": total_medicos,
+            "total_hospitais": total_hospitais, "genero_df": genero_df,
+            "convenio_df": convenio_df, "top_cid_df": top_cid_df
+        }
 
-    tab_geral, tab_geo, tab_recursos = st.tabs([" Visão Geral ", " Análise Geográfica ", " Recursos e Capacidade "])
+    @st.cache_data(ttl=600)
+    def get_hospital_geo_data():
+        """Busca dados geográficos e de capacidade dos hospitais."""
+        query = "SELECT nome, ST_Y(localizacao) AS lat, ST_X(localizacao) AS lon, leitos_totais FROM hospitais WHERE localizacao IS NOT NULL;"
+        return fetch_data(query)
+
+    # --- INÍCIO DA RENDERIZAÇÃO DA PÁGINA ---
+    dashboard_data = get_dashboard_data()
+    df_hospitais = get_hospital_geo_data()
+
+    tab_geral, tab_geo, tab_recursos = st.tabs([" Visão Geral ", " Análise Geográfica ", " Capacidade da Rede "])
 
     with tab_geral:
         st.header("Indicadores Chave de Performance (KPIs)")
         kpi_cols = st.columns(4)
         
-        total_leitos = df_hospitais['leitos_totais'].sum()
-        total_ocupados = df_hospitais['leitos_ocupados'].sum()
-        taxa_ocupacao_geral = total_ocupados / total_leitos if total_leitos > 0 else 0
+        # (KPIs continuam os mesmos)
+        kpi_cols[0].metric("Total de Pacientes", f"{dashboard_data.get('total_pacientes', 0):,}".replace(",", "."))
+        kpi_cols[1].metric("Médicos Ativos", f"{dashboard_data.get('total_medicos', 0):,}".replace(",", "."))
+        kpi_cols[2].metric("Hospitais Monitorados", dashboard_data.get('total_hospitais', 0))
         
-        with kpi_cols[0]:
-            st.metric(label="Total de Pacientes", value=f"{kpi_data.get('total_pacientes', 0):,}".replace(",", "."))
-        with kpi_cols[1]:
-            st.metric(label="Taxa de Ocupação Geral", value=f"{taxa_ocupacao_geral:.1%}")
-        with kpi_cols[2]:
-            st.metric(label="Médicos Ativos", value=f"{kpi_data.get('medicos_ativos', 0):,}".replace(",", "."))
-        with kpi_cols[3]:
-            st.metric(label="Hospitais Monitorados", value=kpi_data.get('hospitais_monitorados', 0))
-        
+        convenio_data = dashboard_data.get('convenio_df', pd.DataFrame())
+        total_pacientes_kpi = dashboard_data.get('total_pacientes', 0)
+        if not convenio_data.empty and total_pacientes_kpi > 0:
+            total_com_convenio = convenio_data.loc[convenio_data['convenio'] == True, 'total'].sum()
+            percent_convenio = total_com_convenio / total_pacientes_kpi
+            kpi_cols[3].metric("Pacientes com Convênio", f"{percent_convenio:.1%}")
+        else:
+            kpi_cols[3].metric("Pacientes com Convênio", "N/A")
+            
         st.divider()
-        chart_cols = st.columns([2, 2])
+        chart_cols = st.columns(2)
 
         with chart_cols[0]:
-            st.subheader("Top 8 Diagnósticos (CID-10)")
-            st.markdown("Principais condições que levam os pacientes à rede.")
+            st.subheader("Top 10 Diagnósticos (CID-10)")
+            df_cid = dashboard_data.get('top_cid_df', pd.DataFrame())
             if not df_cid.empty:
-                st.bar_chart(df_cid, x='cid_descricao', y='total_pacientes', color="#7d53de")
+                # --- NOVO GRÁFICO PLOTLY ---
+                fig = px.bar(
+                    df_cid,
+                    y='cid_completo',          # A nova coluna com código + descrição no eixo Y
+                    x='total_pacientes',       # A contagem no eixo X
+                    orientation='h',           # 'h' para barras horizontais
+                    labels={'cid_completo': 'Diagnóstico (CID-10)', 'total_pacientes': 'Nº de Pacientes'},
+                    text_auto=True,            # Mostra o valor em cima da barra
+                    title="Diagnósticos Mais Frequentes"
+                )
+                # Ordena as barras do menor para o maior (efeito visual melhor)
+                fig.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("Não há dados de diagnósticos para exibir.")
             
         with chart_cols[1]:
-            st.subheader("Alocação de Médicos na Rede")
-            st.markdown("Distribuição de médicos pelo número de hospitais em que atuam.")
-            if not df_alocacao_medicos.empty:
-                max_val = df_alocacao_medicos['total_medicos'].max()
-                st.data_editor(df_alocacao_medicos,
-                    column_config={
-                        "num_hospitais": "Atuação",
-                        "total_medicos": st.column_config.ProgressColumn(
-                            "Total de Médicos", format="%d", min_value=0,
-                            max_value=int(max_val) if max_val > 0 else 1,
-                        ),
-                    }, hide_index=True, use_container_width=True)
-                with st.expander("Ver dados da alocação"):
-                    st.dataframe(df_alocacao_medicos, use_container_width=True)
+            st.subheader("Perfil dos Pacientes")
+            genero_df = dashboard_data.get('genero_df', pd.DataFrame())
+            if not genero_df.empty:
+                genero_df['genero'] = genero_df['genero'].map({'M': 'Masculino', 'F': 'Feminino'}).fillna('Não especificado')
+                fig_genero = px.pie(genero_df, names='genero', values='total', title='Distribuição por Gênero', hole=0.4)
+                st.plotly_chart(fig_genero, use_container_width=True)
             else:
-                st.info("Não há dados de alocação de médicos para exibir.")
+                st.info("Não há dados de gênero para exibir.")
 
+    # (As abas tab_geo e tab_recursos continuam as mesmas da versão anterior)
     with tab_geo:
-        st.header("Distribuição e Ocupação de Hospitais")
-        min_ocupacao = st.slider("Filtrar por taxa de ocupação mínima (%)", 0, 100, 20, format="%d%%")
-        df_filtrado = df_hospitais[df_hospitais['taxa_ocupacao'] >= (min_ocupacao / 100.0)]
-
-        if not df_filtrado.empty:
-            view_state = pdk.ViewState(latitude=df_filtrado['lat'].mean(), longitude=df_filtrado['lon'].mean(), zoom=10, pitch=50)
-            layer = pdk.Layer("ScatterplotLayer", data=df_filtrado, get_position='[lon, lat]',
-                              get_color='[200, 30, 0, 160]', get_radius='leitos_totais',
-                              pickable=True, auto_highlight=True)
-            df_filtrado_copy = df_filtrado.copy()
-            df_filtrado_copy['taxa_ocupacao_formatado'] = df_filtrado_copy['taxa_ocupacao'].apply(lambda x: f"{x:.1%}")
-            tooltip = {"html": "<b>{nome}</b><br/>Ocupação: {taxa_ocupacao_formatado}<br/>Leitos: {leitos_ocupados}/{leitos_totais}",
-                       "style": {"backgroundColor": "#7d53de", "color": "white"}}
-            r = pdk.Deck(layers=[layer], initial_view_state=view_state, map_style=pdk.map_styles.MAPBOX_LIGHT, tooltip=tooltip)
-            st.pydeck_chart(r)
-            st.info("Passe o mouse sobre os pontos para ver detalhes. O tamanho do círculo representa a capacidade total de leitos.")
+        st.header("Distribuição Geográfica de Hospitais")
+        # ... (código do mapa aqui)
+        if not df_hospitais.empty:
+            view_state = pdk.ViewState(latitude=df_hospitais['lat'].mean(), longitude=df_hospitais['lon'].mean(), zoom=9, pitch=50)
+            layer = pdk.Layer("ScatterplotLayer", data=df_hospitais, get_position='[lon, lat]', get_color='[200, 30, 0, 160]', get_radius='leitos_totais * 2', pickable=True, auto_highlight=True)
+            tooltip = {"html": "<b>{nome}</b><br/>Leitos Totais: {leitos_totais}", "style": {"backgroundColor": "#333", "color": "white"}}
+            try:
+                r = pdk.Deck(layers=[layer], initial_view_state=view_state, map_style=pdk.map_styles.MAPBOX_LIGHT, tooltip=tooltip)
+                st.pydeck_chart(r)
+                st.info("Passe o mouse sobre os pontos para ver detalhes. O tamanho do círculo representa a capacidade total de leitos.")
+            except Exception as e:
+                st.error(f"Erro ao renderizar o mapa: {e}. Verifique a chave da API do Mapbox.")
         else:
-            st.warning("Nenhum hospital encontrado para o filtro de ocupação selecionado.")
+            st.warning("Não há hospitais com dados de geolocalização para exibir no mapa.")
 
     with tab_recursos:
-        st.header("Análise Detalhada da Capacidade Hospitalar")
-        st.markdown("Monitore a ocupação de leitos em cada unidade para otimizar a alocação de pacientes.")
-        st.dataframe(df_hospitais,
-            column_config={
-                "nome": "Hospital", "leitos_totais": "Leitos Totais", "leitos_ocupados": "Leitos Ocupados",
-                "taxa_ocupacao": st.column_config.ProgressColumn("Taxa de Ocupação", format="%.1f%%", min_value=0, max_value=1),
-                "lat": None, "lon": None,
-            }, use_container_width=True, hide_index=True)
+        st.header("Capacidade da Rede Hospitalar")
+        # ... (código da tabela de recursos aqui)
+        if not df_hospitais.empty:
+            st.dataframe(df_hospitais, column_config={"nome": "Hospital", "leitos_totais": st.column_config.NumberColumn("Leitos Totais", format="%d"), "lat": None, "lon": None}, use_container_width=True, hide_index=True)
+        else:
+            st.info("Não há dados de hospitais para exibir.")
 
 # --- FINAL ERIC ---
 
