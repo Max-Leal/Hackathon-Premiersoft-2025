@@ -13,3 +13,4 @@ fhir.resources
 hl7
 # Geo (opcional, se fizermos os cálculos em Python)
 geopandas==0.14.4
+streamlit_option_menu
