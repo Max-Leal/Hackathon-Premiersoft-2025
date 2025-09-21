@@ -1,0 +1,2 @@
+{"resourceType": "Patient", "id": "fhir-patient-01", "name": [{"family": "Silva", "given": ["João", "Carlos"]}], "gender": "male", "managingOrganization": {"identifier": {"value": "4314902"}}}
+    {"resourceType": "Patient", "id": "fhir-patient-02", "name": [{"family": "Oliveira", "given": ["Maria"]}], "gender": "female", "managingOrganization": {"identifier": {"value": "4305108"}}}

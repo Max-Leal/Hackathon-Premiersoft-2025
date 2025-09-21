@@ -27,7 +27,7 @@ No terminal, execute:
 ```bash
 docker-compose build
 docker-compose up -d db
-docker-compose run
+docker-compose run pipeline
 docker-compose up
 ```
 ### 2. Instale as Dependências Python
@@ -41,7 +41,8 @@ pip install -r requirements.txt
 
 Inicie a interface web:
 ```bash
-python -m streamlit run ./src/frontend/app.py
+cd ./src/frontend
+python -m streamlit run app.py
 ```
 
 ## 📊 Funcionalidades

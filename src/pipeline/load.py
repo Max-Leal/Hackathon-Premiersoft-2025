@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, text
 from typing import Iterator, Dict
 import os
 import math # <-- IMPORTAÇÃO NECESSÁRIA ADICIONADA AQUI
+from .utils import haversine_distance
 
 # --- Funções de Configuração e Auxiliares ---
 
@@ -51,12 +52,6 @@ def get_especialidade_from_cid(codigo: str) -> str:
         except ValueError: pass
     return CID_CAPITULO_ESPECIALIDADE_MAP.get(letra, "Clínica Geral")
 
-# --- FUNÇÃO HAVERSINE ADICIONADA AQUI ---
-def haversine_distance(lat1, lon1, lat2, lon2):
-    R = 6371; dLat = math.radians(lat2 - lat1); dLon = math.radians(lon2 - lon1)
-    a = math.sin(dLat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLon / 2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
 
 # --- Funções de Carga Especializadas ---
 
@@ -87,53 +82,174 @@ def alocar_e_carregar_medicos(engine):
         SELECT m.codigo, m.especialidade, m.municipio_id, 
                ST_Y(mu.localizacao) as latitude, ST_X(mu.localizacao) as longitude 
         FROM medicos m JOIN municipios mu ON m.municipio_id = mu.codigo_ibge
-        WHERE mu.localizacao IS NOT NULL;
+        WHERE mu.localizacao IS NOT NULL 
+        AND m.especialidade IS NOT NULL 
+        AND trim(m.especialidade) != '';
     """
+    
     query_hospitais = """
         SELECT h.codigo, h.especialidades, h.municipio_id, 
                ST_Y(mu.localizacao) as latitude, ST_X(mu.localizacao) as longitude 
         FROM hospitais h JOIN municipios mu ON h.municipio_id = mu.codigo_ibge
-        WHERE mu.localizacao IS NOT NULL;
+        WHERE mu.localizacao IS NOT NULL 
+        AND h.especialidades IS NOT NULL 
+        AND array_length(h.especialidades, 1) > 0;
     """
+    
     medicos_df = pd.read_sql(query_medicos, engine)
     hospitais_df = pd.read_sql(query_hospitais, engine)
+
+    logging.info(f"Encontrados {len(medicos_df)} médicos com especialidade e localização válidas")
+    logging.info(f"Encontrados {len(hospitais_df)} hospitais com especialidades e localização válidas")
 
     if medicos_df.empty or hospitais_df.empty:
         logging.warning("Não há médicos ou hospitais suficientes para fazer a alocação. Pulando esta etapa.")
         return
-
-    hospitais_por_municipio = {mid: g.to_dict('records') for mid, g in hospitais_df.groupby('municipio_id')}
+    
+    # Normalizar especialidades
+    def normalizar_especialidade(espec):
+        """Normaliza nomes de especialidades para matching mais flexível"""
+        if not isinstance(espec, str):
+            return ""
+        return espec.strip().lower().replace('ã', 'a').replace('í', 'i').replace('ó', 'o')
+    
+    # Aplicar normalização
+    medicos_df['especialidade_norm'] = medicos_df['especialidade'].apply(normalizar_especialidade)
+    
+    # Pré-processar especialidades dos hospitais
+    hospitais_processados = []
+    for _, hospital in hospitais_df.iterrows():
+        esp_list = hospital['especialidades']
+        if isinstance(esp_list, str):
+            # Se veio como string, converte para lista
+            esp_list = esp_list.strip('{}').replace('"', '').split(',')
+        elif not isinstance(esp_list, list):
+            esp_list = []
+        
+        # Normalizar cada especialidade
+        esp_norm = [normalizar_especialidade(e) for e in esp_list if e and e.strip()]
+        
+        hospital_dict = hospital.to_dict()
+        hospital_dict['especialidades_norm'] = esp_norm
+        hospitais_processados.append(hospital_dict)
+    
+    logging.info(f"Processadas especialidades para {len(hospitais_processados)} hospitais")
+    
+    # Criar mapeamento por município para busca eficiente
+    hospitais_por_municipio = {}
+    for hospital in hospitais_processados:
+        municipio_id = hospital['municipio_id']
+        if municipio_id not in hospitais_por_municipio:
+            hospitais_por_municipio[municipio_id] = []
+        hospitais_por_municipio[municipio_id].append(hospital)
+    
     associacoes = []
-
-    for medico in medicos_df.to_dict('records'):
-        medico_id, medico_espec, medico_municipio_id = medico['codigo'], medico['especialidade'], medico['municipio_id']
-        hospitais_alocados_count = 0
-        hospitais_locais = hospitais_por_municipio.get(medico_municipio_id, [])
-        if not hospitais_locais: continue
+    medicos_sem_alocacao = 0
+    
+    for _, medico in medicos_df.iterrows():
+        medico_id = medico['codigo']
+        medico_espec_norm = medico['especialidade_norm']
+        medico_municipio_id = medico['municipio_id']
+        medico_lat = medico['latitude']
+        medico_lon = medico['longitude']
+        
+        if not medico_espec_norm:
+            medicos_sem_alocacao += 1
+            continue
 
         candidatos = []
+        
+        # ETAPA 1: Busca no mesmo município com especialidade compatível
+        hospitais_locais = hospitais_por_municipio.get(medico_municipio_id, [])
         for hospital in hospitais_locais:
-            if medico_espec in hospital.get('especialidades', []):
-                distancia = haversine_distance(medico['latitude'], medico['longitude'], hospital['latitude'], hospital['longitude'])
-                if distancia <= 30:
-                    candidatos.append({'hospital_id': hospital['codigo'], 'distancia': distancia})
+            if medico_espec_norm in hospital['especialidades_norm']:
+                distancia = haversine_distance(medico_lat, medico_lon, 
+                                             hospital['latitude'], hospital['longitude'])
+                candidatos.append({
+                    'hospital_id': hospital['codigo'], 
+                    'distancia': distancia,
+                    'prioridade': 1  # Mesma cidade + especialidade = prioridade máxima
+                })
 
+        # ETAPA 2: Se não encontrou, busca no mesmo município sem filtro de especialidade
+        if len(candidatos) < 3:
+            for hospital in hospitais_locais:
+                if hospital['codigo'] not in [c['hospital_id'] for c in candidatos]:
+                    distancia = haversine_distance(medico_lat, medico_lon, 
+                                                 hospital['latitude'], hospital['longitude'])
+                    candidatos.append({
+                        'hospital_id': hospital['codigo'], 
+                        'distancia': distancia,
+                        'prioridade': 2  # Mesma cidade = prioridade média
+                    })
+
+        # ETAPA 3: Busca em municípios próximos (até 30km) com especialidade compatível
+        if len(candidatos) < 3:
+            for hospital in hospitais_processados:
+                if (hospital['municipio_id'] != medico_municipio_id and 
+                    hospital['codigo'] not in [c['hospital_id'] for c in candidatos]):
+                    
+                    distancia = haversine_distance(medico_lat, medico_lon, 
+                                                 hospital['latitude'], hospital['longitude'])
+                    
+                    if distancia <= 30:  # Apenas hospitais próximos
+                        if medico_espec_norm in hospital['especialidades_norm']:
+                            candidatos.append({
+                                'hospital_id': hospital['codigo'], 
+                                'distancia': distancia,
+                                'prioridade': 3  # Próximo + especialidade = prioridade baixa
+                            })
+
+        # ETAPA 4: Se ainda não tem 3, busca próximos sem filtro de especialidade
+        if len(candidatos) < 3:
+            for hospital in hospitais_processados:
+                if (hospital['municipio_id'] != medico_municipio_id and 
+                    hospital['codigo'] not in [c['hospital_id'] for c in candidatos]):
+                    
+                    distancia = haversine_distance(medico_lat, medico_lon, 
+                                                 hospital['latitude'], hospital['longitude'])
+                    
+                    if distancia <= 30:  # Apenas hospitais próximos
+                        candidatos.append({
+                            'hospital_id': hospital['codigo'], 
+                            'distancia': distancia,
+                            'prioridade': 4  # Próximo = prioridade mínima
+                        })
+
+        # SELEÇÃO FINAL: Ordena por prioridade e depois por distância
         if candidatos:
-            candidatos.sort(key=lambda x: x['distancia'])
-            for candidato in candidatos:
-                if hospitais_alocados_count < 3:
-                    associacoes.append({'medico_id': medico_id, 'hospital_id': candidato['hospital_id']})
-                    hospitais_alocados_count += 1
-                else:
-                    break
+            # Ordenar por prioridade (menor = melhor) e depois por distância
+            candidatos.sort(key=lambda x: (x['prioridade'], x['distancia']))
+            
+            # Seleciona até 3 melhores candidatos
+            for candidato in candidatos[:3]:
+                associacoes.append({
+                    'medico_id': medico_id, 
+                    'hospital_id': candidato['hospital_id']
+                })
+        else:
+            medicos_sem_alocacao += 1
+
+    logging.info(f"Criadas {len(associacoes)} associações médico-hospital")
+    logging.info(f"{medicos_sem_alocacao} médicos não puderam ser alocados")
 
     if not associacoes:
-        logging.warning("Nenhuma associação médico-hospital pôde ser criada com base nas regras.")
+        logging.warning("Nenhuma associação médico-hospital pôde ser criada.")
         return
 
+    # Salvar associações
     associacoes_df = pd.DataFrame(associacoes)
     clear_table(engine, 'medico_hospital_associacao')
     load_dataframe_to_table(engine, associacoes_df, 'medico_hospital_associacao')
+    
+    # Log de estatísticas finais
+    medicos_com_alocacao = len(set(a['medico_id'] for a in associacoes))
+    hospitais_com_medicos = len(set(a['hospital_id'] for a in associacoes))
+    
+    logging.info(f"Estatísticas finais:")
+    logging.info(f"- {medicos_com_alocacao} médicos alocados (de {len(medicos_df)} elegíveis)")
+    logging.info(f"- {hospitais_com_medicos} hospitais receberam médicos")
+    logging.info(f"- {len(associacoes)} associações totais criadas")
 
 # --- Função Principal de Carga ---
 
