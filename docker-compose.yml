@@ -24,10 +24,8 @@ services:
       context: .
       dockerfile: Dockerfile.pipeline
     volumes:
-      - ./src:/app/src
       - ./data:/app/data
-    working_dir: /app
-    command: ["python", "src/main.py"]  
+      - ./src:/app/src
     depends_on:
       db:
         condition: service_healthy

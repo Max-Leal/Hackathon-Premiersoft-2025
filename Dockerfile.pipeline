@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src/ /app/src
+COPY . .
 
-# O comando default será rodar o nosso orquestrador de pipeline
-CMD ["python", "src/main.py"]
+# Usar caminho absoluto para garantir que encontre o arquivo
+CMD ["python", "/app/src/main.py"]
