@@ -1,4 +1,10 @@
+# Arquivos sensíveis
+src/frontend/.streamlit/secrets.toml
+
+# Dados de exemplo
 pacientes.xml
 medicos.csv
-__pycache__/
-secrets.toml
+
+# Cache do Python
+**/__pycache__/
+*.py[cod]
