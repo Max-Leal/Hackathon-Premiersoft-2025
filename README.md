@@ -206,7 +206,7 @@ plotly
 
 ## ✍️ Autores
 
-Projeto desenvolvido para o **APS Hackathon Premiersoft 2025**, com fins educacionais e de inovação em saúde pública.
+Projeto desenvolvido por Matheus Dias Estacio, Eric Dias, Max Augusto Leal da Silva e Leonardo Muller Mandel para o **APS Hackathon Premiersoft 2025**, com fins educacionais e de inovação em saúde pública.
 
 ---
 
