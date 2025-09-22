@@ -1,63 +1,72 @@
-Com certeza! A seguir, apresento uma versão do seu README formatada em Markdown, ideal para o GitHub. Ela corrige a estrutura, melhora a legibilidade e adiciona elementos como uma tabela de conteúdos para facilitar a navegação.
+# APS Hackathon Premiersoft 2025
 
-APS Hackathon Premiersoft 2025
 Sistema de gestão e análise de dados para saúde pública, com dashboard interativo, ingestão de dados, alocação inteligente de recursos e consulta de entidades.
 
-📜 Tabela de Conteúdos
-📂 Estrutura do Projeto
+## 📜 Tabela de Conteúdos
 
-🚀 Como Rodar o Projeto
+- [📂 Estrutura do Projeto](#-estrutura-do-projeto)
+- [🚀 Como Rodar o Projeto](#-como-rodar-o-projeto)
+- [📊 Funcionalidades](#-funcionalidades)
+- [🏛️ Arquitetura da Solução](#️-arquitetura-da-solução)
+- [🛠️ Requisitos](#️-requisitos)
+- [📌 Observações](#-observações)
+- [✍️ Autores](#️-autores)
 
-📊 Funcionalidades
+## 📂 Estrutura do Projeto
 
-🏛️ Arquitetura da Solução
+A estrutura de pastas foi organizada para separar as responsabilidades e facilitar a manutenção:
 
-🛠️ Requisitos
-
-📌 Observações
-
-✍️ Autores
-
-📂 Estrutura do Projeto
-A estrutura de pastas foi organizada para separar as responsabilidades e facilitar a manutenção.
-
-├── data/              # Dados brutos e scripts de inicialização
-├── scripts/           # Scripts SQL para inicialização do banco
+```
+├── data/                  # Dados brutos e scripts de inicialização
+├── scripts/               # Scripts SQL para inicialização do banco
 ├── src/
-│   ├── common/        # Funções de utilidade (ex: cálculos geográficos)
-│   ├── core/          # Lógica de negócio pura (ex: algoritmos de alocação)
-│   ├── infrastructure/  # Conexão e interação com o banco de dados
-│   ├── ingestion/     # Conversores para múltiplos formatos de arquivo (CSV, XML, HL7)
-│   ├── pipeline/      # Orquestração do ETL (Extract, Transform, Load)
-│   └── frontend/      # Interface do dashboard (Streamlit)
-├── .streamlit/        # Configurações do Streamlit
-├── docker-compose.yml # Orquestração de containers
-└── requirements.txt   # Dependências Python
-🚀 Como Rodar o Projeto
+│   ├── dashboard/         # Interface do dashboard principal
+│   │   ├── __init__.py
+│   │   └── app.py
+│   ├── frontend/          # Interface web (Streamlit)
+│   │   ├── .streamlit/    # Configurações do Streamlit
+│   │   ├── assets/        # Assets estáticos (CSS, JS, imagens)
+│   │   ├── app.py         # Aplicação principal do Streamlit
+│   │   └── db_utils.py    # Utilitários de conexão com banco
+│   ├── ingestion/         # Conversores para múltiplos formatos
+│   │   └── converter.py   # Conversores (CSV, XML, HL7)
+│   └── pipeline/          # Orquestração do ETL
+│       ├── __init__.py
+│       ├── allocate.py    # Algoritmos de alocação inteligente
+│       ├── extract.py     # Extração de dados
+│       └── extract_utils.py # Utilitários de extração
+├── docker-compose.yml     # Orquestração de containers
+└── requirements.txt       # Dependências Python
+```
+
+## 🚀 Como Rodar o Projeto
+
 Siga os passos abaixo para executar a aplicação em seu ambiente local.
 
-Pré-requisitos
-Docker
+### Pré-requisitos
 
-Docker Compose
+- Docker
+- Docker Compose
+- Python 3.11+
 
-Python 3.11+
+### 1. Clone o Repositório
 
-1. Clone o Repositório
-Bash
-
+```bash
 git clone <URL_DO_SEU_REPOSITORIO>
 cd <NOME_DO_SEU_REPOSITORIO>
-2. Suba os Serviços com Docker Compose
-Este comando irá construir as imagens, iniciar o banco de dados, executar o pipeline de ETL e, em seguida, subir a aplicação web.
+```
 
-Bash
+### 2. Suba os Serviços com Docker Compose
 
+Este comando irá construir as imagens, iniciar o banco de dados, executar o pipeline de ETL e subir a aplicação web:
+
+```bash
 docker-compose up --build
+```
+
 Alternativamente, você pode executar os serviços passo a passo:
 
-Bash
-
+```bash
 # Constrói as imagens
 docker-compose build
 
@@ -69,70 +78,137 @@ docker-compose run pipeline
 
 # Inicia todos os serviços (incluindo o frontend)
 docker-compose up
-3. Instale as Dependências (se for rodar localmente sem Docker)
+```
+
+### 3. Instale as Dependências (execução local sem Docker)
+
 Caso prefira executar o frontend fora do container, certifique-se de que o banco de dados esteja rodando via Docker e instale as dependências:
 
-Bash
-
+```bash
 pip install -r requirements.txt
-4. Execute o Frontend (se for rodar localmente sem Docker)
+```
+
+### 4. Execute o Frontend (execução local sem Docker)
+
 Com as dependências instaladas, inicie a interface Streamlit:
 
-Bash
+```bash
+# Para o dashboard principal
+streamlit run src/dashboard/app.py
 
+# OU para o frontend web
 streamlit run src/frontend/app.py
-A aplicação estará disponível em http://localhost:8501.
+```
 
-📊 Funcionalidades
-Dashboard Interativo: Visualização dos principais indicadores de saúde, como ocupação de leitos, distribuição de profissionais e estatísticas epidemiológicas.
+A aplicação estará disponível em **http://localhost:8501**.
 
-Ingestão de Dados: Sistema de upload robusto que aceita diversos formatos de dados brutos (Excel, CSV, XML, JSON, HL7).
+## 📊 Funcionalidades
 
-Alocação Inteligente: Algoritmos para otimizar a alocação de médicos e pacientes, sugerindo as melhores combinações com base em localização, especialidade e capacidade.
+### 🎯 Dashboard Interativo
+Visualização dos principais indicadores de saúde, como:
+- Ocupação de leitos
+- Distribuição de profissionais
+- Estatísticas epidemiológicas
+- Métricas em tempo real
 
-Consulta de Entidades: Interface para busca, filtro e navegação por entidades cadastradas (hospitais, médicos, pacientes).
+### 📥 Ingestão de Dados
+Sistema de upload robusto que aceita diversos formatos:
+- **Excel** (.xlsx, .xls)
+- **CSV** (.csv)
+- **XML** (.xml)
+- **JSON** (.json)
+- **HL7** (padrão de saúde)
 
-🏛️ Arquitetura da Solução
-O sistema foi desenhado com uma clara separação de responsabilidades entre as camadas, facilitando a manutenção e a escalabilidade. O fluxo de dados segue as etapas clássicas de um pipeline de ETL.
+### 🧠 Alocação Inteligente
+Algoritmos para otimizar a alocação de recursos:
+- Distribuição de médicos por especialidade
+- Alocação de pacientes por proximidade
+- Otimização baseada em capacidade hospitalar
+- Sugestões de melhor combinação geográfica
 
-Fluxo de Dados
-Ingestão (/src/ingestion): Arquivos de múltiplos formatos (.csv, .xlsx, .hl7, etc.) são lidos e convertidos para um schema padronizado em memória (DataFrame Pandas). Um SCHEMA_MAP universal é usado para traduzir os nomes das colunas de diferentes fontes.
+### 🔍 Consulta de Entidades
+Interface completa para gerenciamento:
+- Busca avançada por filtros
+- Navegação por hospitais, médicos e pacientes
+- Visualização de dados consolidados
+- Exportação de relatórios
 
-Transformação (/src/pipeline/transform.py): Os DataFrames padronizados passam por um processo de:
+## 🏛️ Arquitetura da Solução
 
-Limpeza de dados (valores nulos, formatos inconsistentes).
+O sistema foi desenhado com uma clara separação de responsabilidades entre as camadas, seguindo os princípios de clean architecture e facilitando a manutenção e escalabilidade.
 
-Validação de tipos (ex: leitos_totais para inteiro).
+### 📊 Fluxo de Dados (Pipeline ETL)
 
-Remoção de duplicatas (ex: cpf de pacientes).
+```mermaid
+graph TD
+    A[Dados Brutos] --> B[Ingestão]
+    B --> C[Transformação]
+    C --> D[Lógica de Negócio]
+    D --> E[Carga no BD]
+    E --> F[Dashboard/Frontend]
+```
 
-Enriquecimento (ex: adição de coordenadas geográficas a médicos e hospitais).
+#### 1. **Ingestão** (`/src/ingestion/`)
+- Leitura de arquivos múltiplos formatos (.csv, .xlsx, .hl7, etc.)
+- Conversão para schema padronizado (DataFrame Pandas)
+- Uso de SCHEMA_MAP universal para tradução de colunas
 
-Lógica de Negócio (/src/core): Funções "puras" recebem os DataFrames limpos e aplicam as regras complexas de alocação de médicos e pacientes, retornando os resultados como novos DataFrames. Esta camada não tem conhecimento sobre o banco de dados ou a origem dos dados.
+#### 2. **Transformação** (`/src/pipeline/extract.py` e `extract_utils.py`)
+- **Limpeza**: Tratamento de valores nulos e formatos inconsistentes
+- **Validação**: Verificação de tipos de dados (ex: leitos_totais → inteiro)
+- **Deduplicação**: Remoção de registros duplicados (ex: CPF de pacientes)
+- **Enriquecimento**: Adição de coordenadas geográficas
 
-Carga (/src/pipeline/load.py): A camada final recebe todos os DataFrames processados e os persiste no banco de dados PostgreSQL, respeitando a ordem de dependência das tabelas para garantir a integridade referencial.
+#### 3. **Lógica de Negócio** (`/src/pipeline/allocate.py`)
+- Funções "puras" para regras de alocação
+- Algoritmos de otimização de recursos
+- Cálculos de proximidade geográfica
+- Retorno de resultados como DataFrames processados
 
-Visualização (/src/frontend): O dashboard Streamlit lê os dados já consolidados e limpos diretamente do banco de dados para apresentar os KPIs e gráficos interativos ao usuário final.
+#### 4. **Carga** (Pipeline de Load)
+- Persistência no PostgreSQL
+- Respeito à ordem de dependência das tabelas
+- Garantia de integridade referencial
 
-🛠️ Requisitos
-Linguagem: Python 3.11
+#### 5. **Visualização** (`/src/frontend/` e `/src/dashboard/`)
+- Dashboard Streamlit com dados consolidados
+- Leitura direta do banco de dados
+- KPIs e gráficos interativos
 
-Processamento de Dados: Pandas
+## 🛠️ Requisitos
 
-Banco de Dados: PostgreSQL + PostGIS
+### Tecnologias Principais
+- **Linguagem**: Python 3.11+
+- **Processamento**: Pandas, NumPy
+- **Banco de Dados**: PostgreSQL + PostGIS
+- **Interface**: Streamlit
+- **Containerização**: Docker & Docker Compose
 
-Dashboard: Streamlit
+### Bibliotecas Essenciais
+```
+streamlit
+pandas
+sqlalchemy
+psycopg2-binary
+python-hl7
+geopandas
+plotly
+```
 
-Containerização: Docker & Docker Compose
+## 📌 Observações
 
-Bibliotecas Principais: sqlalchemy, psycopg2-binary, python-hl7, geopandas
+- 📁 **Dados de exemplo** para teste estão na pasta `data/raw/`
+- 🗃️ **Inicialização do BD** via script `scripts/init.sql`
+- 🎨 **Configurações do Streamlit** na pasta `src/frontend/.streamlit/`
+- 🐳 **Ambiente containerizado** para fácil deploy e reprodução
+- 🔄 **Pipeline automatizado** de ETL com validação de dados
+- 📈 **Dashboards responsivos** com visualizações interativas
 
-📌 Observações
-Os dados de exemplo para teste estão localizados na pasta data/raw/.
+## ✍️ Autores
 
-O banco de dados é inicializado com tabelas e tipos de dados customizados através do script scripts/init.sql.
+Projeto desenvolvido para o **APS Hackathon Premiersoft 2025**, com fins educacionais e de inovação em saúde pública.
 
-As configurações do tema e layout do Streamlit estão na pasta .streamlit/.
+---
 
-✍️ Autores
-Projeto desenvolvido por Matheus Dias Estacio, Eric Dias, Max Augusto Leal e Leonardo Muller Mandel para o APS Hackathon Premiersoft 2025, com fins educacionais e de inovação em saúde pública.
+### 🏆 Hackathon Premiersoft 2025
+*Sistema inteligente para gestão de saúde pública com foco em otimização de recursos e análise de dados epidemiológicos.*
